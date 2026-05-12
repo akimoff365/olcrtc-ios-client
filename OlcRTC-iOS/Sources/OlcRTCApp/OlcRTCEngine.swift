@@ -17,7 +17,8 @@ enum OlcRTCEngine {
             MobileSetVP8Options(fps, batch)
         }
 
-        try MobileStartWithTransport(
+        var startError: NSError?
+        let started = MobileStartWithTransport(
             profile.carrier,
             profile.transport,
             profile.roomID,
@@ -25,9 +26,24 @@ enum OlcRTCEngine {
             profile.keyHex,
             socksPort,
             "",
-            ""
+            "",
+            &startError
         )
-        try MobileWaitReady(12_000)
+        if let startError {
+            throw startError
+        }
+        guard started else {
+            throw RuntimeError.startFailed
+        }
+
+        var waitError: NSError?
+        let ready = MobileWaitReady(12_000, &waitError)
+        if let waitError {
+            throw waitError
+        }
+        guard ready else {
+            throw RuntimeError.readyTimeout
+        }
         #else
         throw RuntimeError.frameworkMissing
         #endif
@@ -41,9 +57,18 @@ enum OlcRTCEngine {
 
     enum RuntimeError: LocalizedError {
         case frameworkMissing
+        case startFailed
+        case readyTimeout
 
         var errorDescription: String? {
-            "Mobile.xcframework is not linked. Build it with Scripts/build-mobile-xcframework.sh."
+            switch self {
+            case .frameworkMissing:
+                return "Mobile.xcframework is not linked. Build it with Scripts/build-mobile-xcframework.sh."
+            case .startFailed:
+                return "olcrtc did not start."
+            case .readyTimeout:
+                return "olcrtc SOCKS proxy was not ready in time."
+            }
         }
     }
 }
