@@ -28,14 +28,19 @@ extension OlcRTCProfile {
         let leftOfComment = splitComment.left
         let comment = splitComment.right ?? ""
 
-        let splitClient = leftOfComment.splitOnce(separator: "%")
-        guard let clientID = splitClient.right, !clientID.isEmpty else {
-            throw ParseError.missingClientID
+        let splitKey = leftOfComment.splitOnce(separator: "#")
+        guard let keyAndClient = splitKey.right else {
+            throw ParseError.invalidKey
         }
 
-        let splitKey = splitClient.left.splitOnce(separator: "#")
-        guard let keyHex = splitKey.right, keyHex.isHexKey else {
+        let splitClient = keyAndClient.splitOnce(separator: "%")
+        guard splitClient.left.isHexKey else {
             throw ParseError.invalidKey
+        }
+        let keyHex = splitClient.left
+
+        guard let clientID = splitClient.right, !clientID.isEmpty else {
+            throw ParseError.missingClientID
         }
 
         let splitRoom = splitKey.left.splitOnce(separator: "@")
