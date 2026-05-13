@@ -623,12 +623,12 @@ private extension ProxyLogEntry.Level {
         switch self {
         case .info:
             return .blue
+        case .success:
+            return .green
         case .warning:
             return .orange
         case .error:
             return .red
-        case .debug:
-            return .secondary
         }
     }
 
@@ -636,12 +636,12 @@ private extension ProxyLogEntry.Level {
         switch self {
         case .info:
             return "info.circle.fill"
+        case .success:
+            return "checkmark.circle.fill"
         case .warning:
             return "exclamationmark.triangle.fill"
         case .error:
             return "xmark.octagon.fill"
-        case .debug:
-            return "wrench.and.screwdriver.fill"
         }
     }
 }

@@ -69,8 +69,8 @@ final class LocalProxyController: ObservableObject {
 
             let currentCredentials = SocksCredentials.load()
             credentials = currentCredentials
-            guard await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: currentCredentials) else {
-                throw ControllerError.localSocksAuthFailed
+            guard await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: currentCredentials) else {
+                throw ControllerError.tunnelConnectivityFailed
             }
 
             activeProfile = profile
@@ -80,7 +80,7 @@ final class LocalProxyController: ObservableObject {
             lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort), auth включен"
             startPathMonitor()
             startWatchdog()
-            appendLog(.info, "SOCKS is ready on 127.0.0.1:\(socksPort)")
+            appendLog(.success, "SOCKS tunnel check passed on 127.0.0.1:\(socksPort)")
         } catch {
             stopEngineInBackground()
             BackgroundKeepAlive.shared.stop()
@@ -139,8 +139,8 @@ final class LocalProxyController: ObservableObject {
 
             let currentCredentials = SocksCredentials.load()
             credentials = currentCredentials
-            guard await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: currentCredentials) else {
-                throw ControllerError.localSocksAuthFailed
+            guard await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: currentCredentials) else {
+                throw ControllerError.tunnelConnectivityFailed
             }
 
             reconnectCount += 1
@@ -148,7 +148,7 @@ final class LocalProxyController: ObservableObject {
             healthState = .healthy
             status = .running
             lastMessage = "SOCKS перезапущен. Теперь включи профиль во внешнем VPN-клиенте."
-            appendLog(.info, "SOCKS restarted on 127.0.0.1:\(socksPort)")
+            appendLog(.success, "SOCKS tunnel check passed after restart")
         } catch {
             stopEngineInBackground()
             healthState = .unhealthy
@@ -256,14 +256,14 @@ final class LocalProxyController: ObservableObject {
         }
 
         healthState = .checking
-        let isAlive = await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: credentials)
+        let isAlive = await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: credentials)
         guard status == .running else {
             return
         }
 
         if isAlive {
             healthState = .healthy
-            appendLog(.debug, "Foreground check: SOCKS5 auth handshake passed")
+            appendLog(.success, "Foreground check: tunnel CONNECT passed")
         } else {
             enterExternalTunnelRecovery("Foreground check failed")
         }
@@ -276,7 +276,7 @@ final class LocalProxyController: ObservableObject {
 
         let previousHealth = healthState
         healthState = .checking
-        let isAlive = await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: credentials)
+        let isAlive = await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: credentials)
 
         guard status == .running else {
             return
@@ -286,18 +286,18 @@ final class LocalProxyController: ObservableObject {
             consecutiveHealthFailures = 0
             healthState = .healthy
             if previousHealth != .healthy {
-            appendLog(.info, "Watchdog: SOCKS5 auth handshake passed")
+                appendLog(.success, "Watchdog: tunnel CONNECT passed")
             }
             return
         }
 
         consecutiveHealthFailures += 1
         healthState = .unhealthy
-        appendLog(.warning, "Watchdog: SOCKS5 auth handshake failed (\(consecutiveHealthFailures)/2)")
+        appendLog(.warning, "Watchdog: tunnel CONNECT failed (\(consecutiveHealthFailures)/2)")
 
         if consecutiveHealthFailures >= 2 {
             appendLog(.warning, "Watchdog: restarting local SOCKS after repeated failures")
-            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: auth-handshake не проходит.", delayNanoseconds: 0)
+            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: тестовый CONNECT не проходит.", delayNanoseconds: 0)
         }
     }
 
@@ -364,12 +364,12 @@ private struct NetworkPathSnapshot {
 }
 
 private enum ControllerError: LocalizedError {
-    case localSocksAuthFailed
+    case tunnelConnectivityFailed
 
     var errorDescription: String? {
         switch self {
-        case .localSocksAuthFailed:
-            return "SOCKS5 запустился, но не прошел локальную проверку авторизации."
+        case .tunnelConnectivityFailed:
+            return "SOCKS5 запустился, но через него не проходит тестовый CONNECT."
         }
     }
 }

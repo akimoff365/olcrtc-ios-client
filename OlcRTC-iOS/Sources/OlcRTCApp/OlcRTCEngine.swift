@@ -72,6 +72,22 @@ enum OlcRTCEngine {
         }
     }
 
+    static func checkTunnelConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 8_000_000_000) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await Self.socksConnectProbe(port: port, credentials: credentials)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return false
+            }
+
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
+        }
+    }
+
     private static func socksAuthHandshake(port: Int, credentials: SocksCredentials) async -> Bool {
         await Task.detached(priority: .utility) {
             let username = Array(credentials.username.utf8)
@@ -123,6 +139,93 @@ enum OlcRTCEngine {
 
             return Self.writeAll(authRequest, to: descriptor)
                 && Self.readExact(2, from: descriptor) == [0x01, 0x00]
+        }.value
+    }
+
+    private static func socksConnectProbe(port: Int, credentials: SocksCredentials) async -> Bool {
+        await Task.detached(priority: .utility) {
+            let username = Array(credentials.username.utf8)
+            let password = Array(credentials.password.utf8)
+            guard (1...65_535).contains(port),
+                  username.count <= 255,
+                  password.count <= 255 else {
+                return false
+            }
+
+            let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+            guard descriptor >= 0 else {
+                return false
+            }
+            defer {
+                close(descriptor)
+            }
+            Self.setSocketTimeouts(descriptor)
+
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = in_port_t(port).bigEndian
+            address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+
+            let result = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                    Darwin.connect(
+                        descriptor,
+                        socketAddress,
+                        socklen_t(MemoryLayout<sockaddr_in>.size)
+                    )
+                }
+            }
+
+            guard result == 0 else {
+                return false
+            }
+
+            guard Self.writeAll([0x05, 0x01, 0x02], to: descriptor),
+                  Self.readExact(2, from: descriptor) == [0x05, 0x02] else {
+                return false
+            }
+
+            var authRequest: [UInt8] = [0x01, UInt8(username.count)]
+            authRequest.append(contentsOf: username)
+            authRequest.append(UInt8(password.count))
+            authRequest.append(contentsOf: password)
+
+            guard Self.writeAll(authRequest, to: descriptor),
+                  Self.readExact(2, from: descriptor) == [0x01, 0x00] else {
+                return false
+            }
+
+            let connectToCloudflareHTTPS: [UInt8] = [
+                0x05, 0x01, 0x00, 0x01,
+                0x01, 0x01, 0x01, 0x01,
+                0x01, 0xbb
+            ]
+
+            guard Self.writeAll(connectToCloudflareHTTPS, to: descriptor),
+                  let header = Self.readExact(4, from: descriptor),
+                  header.count == 4,
+                  header[0] == 0x05,
+                  header[1] == 0x00 else {
+                return false
+            }
+
+            let addressLength: Int
+            switch header[3] {
+            case 0x01:
+                addressLength = 4
+            case 0x03:
+                guard let lengthByte = Self.readExact(1, from: descriptor)?.first else {
+                    return false
+                }
+                addressLength = Int(lengthByte)
+            case 0x04:
+                addressLength = 16
+            default:
+                return false
+            }
+
+            return Self.readExact(addressLength + 2, from: descriptor) != nil
         }.value
     }
 

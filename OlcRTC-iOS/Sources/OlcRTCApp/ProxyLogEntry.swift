@@ -3,9 +3,9 @@ import Foundation
 struct ProxyLogEntry: Identifiable, Equatable {
     enum Level: String {
         case info = "INFO"
+        case success = "OK"
         case warning = "WARN"
         case error = "ERROR"
-        case debug = "DEBUG"
     }
 
     let id = UUID()
