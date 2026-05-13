@@ -5,7 +5,7 @@ import Mobile
 #endif
 
 enum OlcRTCEngine {
-    static func start(profile: OlcRTCProfile, socksPort: Int = 10808) throws {
+    static func start(profile: OlcRTCProfile, socksPort: Int = 18080) throws {
         #if canImport(Mobile)
         MobileSetProviders()
         MobileSetDNS("8.8.8.8:53")

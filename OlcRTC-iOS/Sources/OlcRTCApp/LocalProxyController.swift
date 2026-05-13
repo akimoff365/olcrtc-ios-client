@@ -13,7 +13,7 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var lastMessage: String?
     @Published private(set) var activeProfile: OlcRTCProfile?
 
-    let socksPort = 10808
+    let socksPort = 18080
 
     func start(profile: OlcRTCProfile) async {
         status = .starting
