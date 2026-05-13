@@ -6,8 +6,9 @@ final class LocalProxyController: ObservableObject {
     enum Status: String {
         case stopped = "Остановлен"
         case starting = "Запускается"
-        case reconnecting = "Переподключение"
+        case restarting = "Перезапуск"
         case running = "Работает"
+        case needsTunnelRestart = "Нужен рестарт VPN"
         case failed = "Ошибка"
     }
 
@@ -16,6 +17,7 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var activeProfile: OlcRTCProfile?
     @Published private(set) var reconnectCount = 0
     @Published private(set) var networkName = "Нет"
+    @Published private(set) var credentials = SocksCredentials.load()
 
     let socksPort = 18080
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
@@ -23,8 +25,8 @@ final class LocalProxyController: ObservableObject {
     private var lastPathSignature: String?
     private var reconnectTask: Task<Void, Never>?
 
-    var canReconnect: Bool {
-        activeProfile != nil && status != .stopped && status != .starting && status != .reconnecting
+    var canRestart: Bool {
+        activeProfile != nil && status != .stopped && status != .starting && status != .restarting
     }
 
     func start(profile: OlcRTCProfile) async {
@@ -38,14 +40,16 @@ final class LocalProxyController: ObservableObject {
         do {
             OlcRTCEngine.stop()
             try await Task.detached(priority: .userInitiated) { [socksPort] in
-                try OlcRTCEngine.start(profile: profile, socksPort: socksPort)
+                let credentials = SocksCredentials.load()
+                try OlcRTCEngine.start(profile: profile, socksPort: socksPort, credentials: credentials)
             }.value
             try BackgroundKeepAlive.shared.start()
 
+            credentials = SocksCredentials.load()
             activeProfile = profile
             reconnectCount = 0
             status = .running
-            lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort)"
+            lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort), auth включен"
             startPathMonitor()
         } catch {
             OlcRTCEngine.stop()
@@ -57,12 +61,12 @@ final class LocalProxyController: ObservableObject {
         }
     }
 
-    func reconnect() {
+    func restartSocks() {
         guard let activeProfile else {
             return
         }
 
-        scheduleReconnect(profile: activeProfile, reason: "Ручное переподключение...", delayNanoseconds: 0)
+        scheduleRestart(profile: activeProfile, reason: "Перезапускаю локальный SOCKS...", delayNanoseconds: 0)
     }
 
     func stop() {
@@ -79,29 +83,31 @@ final class LocalProxyController: ObservableObject {
         lastMessage = nil
     }
 
-    private func reconnectNow(profile: OlcRTCProfile, reason: String) async {
+    private func restartNow(profile: OlcRTCProfile, reason: String) async {
         guard activeProfile?.id == profile.id else {
             return
         }
 
-        status = .reconnecting
+        status = .restarting
         lastMessage = reason
 
         do {
             OlcRTCEngine.stop()
             try? await Task.sleep(nanoseconds: 600_000_000)
             try await Task.detached(priority: .userInitiated) { [socksPort] in
-                try OlcRTCEngine.start(profile: profile, socksPort: socksPort)
+                let credentials = SocksCredentials.load()
+                try OlcRTCEngine.start(profile: profile, socksPort: socksPort, credentials: credentials)
             }.value
             try BackgroundKeepAlive.shared.start()
 
+            credentials = SocksCredentials.load()
             reconnectCount += 1
             status = .running
-            lastMessage = "Переподключено. SOCKS5: 127.0.0.1:\(socksPort)"
+            lastMessage = "SOCKS перезапущен. Теперь включи профиль во внешнем VPN-клиенте."
         } catch {
             OlcRTCEngine.stop()
             status = .failed
-            lastMessage = "Не удалось переподключиться: \(error.localizedDescription)"
+            lastMessage = "Не удалось перезапустить SOCKS: \(error.localizedDescription)"
         }
     }
 
@@ -142,20 +148,21 @@ final class LocalProxyController: ObservableObject {
         }
 
         guard snapshot.isSatisfied else {
-            if status == .running || status == .reconnecting {
+            if status == .running || status == .restarting {
                 lastMessage = "Сеть переключается. Жду рабочее соединение..."
             }
             return
         }
 
-        guard status == .running || status == .failed else {
+        guard status == .running || status == .failed || status == .needsTunnelRestart else {
             return
         }
 
-        scheduleReconnect(profile: activeProfile, reason: "Сеть изменилась. Переподключаю olcrtc...", delayNanoseconds: 1_800_000_000)
+        status = .needsTunnelRestart
+        lastMessage = "Сеть изменилась. Отключи туннель во внешнем VPN-клиенте, нажми Restart SOCKS, затем включи туннель обратно."
     }
 
-    private func scheduleReconnect(profile: OlcRTCProfile, reason: String, delayNanoseconds: UInt64) {
+    private func scheduleRestart(profile: OlcRTCProfile, reason: String, delayNanoseconds: UInt64) {
         reconnectTask?.cancel()
         reconnectTask = Task { [profile] in
             if delayNanoseconds > 0 {
@@ -164,7 +171,7 @@ final class LocalProxyController: ObservableObject {
             guard !Task.isCancelled else {
                 return
             }
-            await reconnectNow(profile: profile, reason: reason)
+            await restartNow(profile: profile, reason: reason)
         }
     }
 

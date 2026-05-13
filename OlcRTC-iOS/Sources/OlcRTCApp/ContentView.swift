@@ -9,7 +9,7 @@ struct ContentView: View {
     @EnvironmentObject private var proxy: LocalProxyController
     @State private var importText = ""
     @State private var importError: String?
-    @State private var copiedProxy = false
+    @State private var copiedProxy: ProxyCopyKind?
     @FocusState private var importFocused: Bool
 
     var body: some View {
@@ -22,9 +22,9 @@ struct ContentView: View {
                         activeProfile: proxy.activeProfile,
                         reconnectCount: proxy.reconnectCount,
                         lastMessage: proxy.lastMessage,
-                        reconnect: proxy.reconnect,
+                        restart: proxy.restartSocks,
                         stop: proxy.stop,
-                        canReconnect: proxy.canReconnect,
+                        canRestart: proxy.canRestart,
                         canStop: proxy.status != .stopped
                     )
 
@@ -39,7 +39,7 @@ struct ContentView: View {
                     ProfilesPanel(
                         profiles: store.profiles,
                         activeProfile: proxy.activeProfile,
-                        isBusy: proxy.status == .starting || proxy.status == .reconnecting,
+                        isBusy: proxy.status == .starting || proxy.status == .restarting,
                         connect: { profile in
                             Task {
                                 await proxy.start(profile: profile)
@@ -50,8 +50,11 @@ struct ContentView: View {
 
                     ProxyPanel(
                         port: proxy.socksPort,
+                        credentials: proxy.credentials,
                         copied: copiedProxy,
-                        copy: copyProxySettings
+                        copySocksLink: copySocksLink,
+                        copySocks5Link: copySocks5Link,
+                        copySettings: copyProxySettings
                     )
                 }
                 .padding(16)
@@ -61,11 +64,11 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        proxy.reconnect()
+                        proxy.restartSocks()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .disabled(!proxy.canReconnect)
+                    .disabled(!proxy.canRestart)
 
                     Button(role: .destructive) {
                         proxy.stop()
@@ -107,14 +110,35 @@ struct ContentView: View {
         SOCKS5
         Host: 127.0.0.1
         Port: \(proxy.socksPort)
-        Auth: Off
+        Username: \(proxy.credentials.username)
+        Password: \(proxy.credentials.password)
         """
-        copiedProxy = true
+        markCopied(.settings)
+        #endif
+    }
+
+    private func copySocksLink() {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = proxy.credentials.legacySocksURL(port: proxy.socksPort)
+        markCopied(.socks)
+        #endif
+    }
+
+    private func copySocks5Link() {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = proxy.credentials.socks5URL(port: proxy.socksPort)
+        markCopied(.socks5)
+        #endif
+    }
+
+    private func markCopied(_ kind: ProxyCopyKind) {
+        copiedProxy = kind
         Task {
             try? await Task.sleep(for: .seconds(2))
-            copiedProxy = false
+            if copiedProxy == kind {
+                copiedProxy = nil
+            }
         }
-        #endif
     }
 }
 
@@ -124,9 +148,9 @@ private struct ConnectionPanel: View {
     let activeProfile: OlcRTCProfile?
     let reconnectCount: Int
     let lastMessage: String?
-    let reconnect: () -> Void
+    let restart: () -> Void
     let stop: () -> Void
-    let canReconnect: Bool
+    let canRestart: Bool
     let canStop: Bool
 
     var body: some View {
@@ -148,11 +172,11 @@ private struct ConnectionPanel: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button(action: reconnect) {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
+                    Button(action: restart) {
+                        Label("Restart SOCKS", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!canReconnect)
+                    .disabled(!canRestart)
 
                     Button(role: .destructive, action: stop) {
                         Label("Stop", systemImage: "stop.fill")
@@ -162,8 +186,8 @@ private struct ConnectionPanel: View {
                 }
 
                 HStack(spacing: 16) {
-                    MetricView(title: "Reconnects", value: "\(reconnectCount)")
-                    MetricView(title: "Mode", value: "SOCKS5")
+                    MetricView(title: "Restarts", value: "\(reconnectCount)")
+                    MetricView(title: "Auth", value: "On")
                 }
 
                 if let lastMessage {
@@ -296,8 +320,11 @@ private struct ProfileRow: View {
 
 private struct ProxyPanel: View {
     let port: Int
-    let copied: Bool
-    let copy: () -> Void
+    let credentials: SocksCredentials
+    let copied: ProxyCopyKind?
+    let copySocksLink: () -> Void
+    let copySocks5Link: () -> Void
+    let copySettings: () -> Void
 
     var body: some View {
         Panel(title: "Локальный прокси", systemImage: "network") {
@@ -321,15 +348,42 @@ private struct ProxyPanel: View {
                     GridRow {
                         Text("Auth")
                             .foregroundStyle(.secondary)
-                        Text("Off")
+                        Text("On")
+                    }
+                    GridRow {
+                        Text("User")
+                            .foregroundStyle(.secondary)
+                        Text(credentials.username)
+                    }
+                    GridRow {
+                        Text("Pass")
+                            .foregroundStyle(.secondary)
+                        Text(credentials.password)
                     }
                 }
                 .font(.callout.monospaced())
 
-                Button(action: copy) {
-                    Label(copied ? "Скопировано" : "Копировать", systemImage: copied ? "checkmark" : "doc.on.doc")
+                HStack(spacing: 10) {
+                    Button(action: copySocksLink) {
+                        Label(copied == .socks ? "Copied" : "socks://", systemImage: copied == .socks ? "checkmark" : "link")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button(action: copySocks5Link) {
+                        Label(copied == .socks5 ? "Copied" : "socks5://", systemImage: copied == .socks5 ? "checkmark" : "link")
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderedProminent)
+
+                Button(action: copySettings) {
+                    Label(copied == .settings ? "Скопировано" : "Копировать вручную", systemImage: copied == .settings ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+
+                Text("Сначала запускается OlcRTC, потом импортируй socks:// или socks5:// ссылку во внешний VPN-клиент. Если сеть сменилась, выключи туннель во внешнем клиенте, нажми Restart SOCKS и включи его обратно.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -411,7 +465,7 @@ private extension LocalProxyController.Status {
         switch self {
         case .running:
             return .green
-        case .starting, .reconnecting:
+        case .starting, .restarting, .needsTunnelRestart:
             return .orange
         case .failed:
             return .red
@@ -426,12 +480,20 @@ private extension LocalProxyController.Status {
             return "checkmark.shield.fill"
         case .starting:
             return "hourglass"
-        case .reconnecting:
+        case .restarting:
             return "arrow.triangle.2.circlepath"
+        case .needsTunnelRestart:
+            return "exclamationmark.arrow.triangle.2.circlepath"
         case .failed:
             return "exclamationmark.triangle.fill"
         case .stopped:
             return "power"
         }
     }
+}
+
+private enum ProxyCopyKind: Equatable {
+    case socks
+    case socks5
+    case settings
 }
