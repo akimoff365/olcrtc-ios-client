@@ -5,6 +5,7 @@ import UIKit
 #endif
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: ProfileStore
     @EnvironmentObject private var proxy: LocalProxyController
     @State private var importText = ""
@@ -90,6 +91,11 @@ struct ContentView: View {
             }
             .onOpenURL { url in
                 importProfile(from: url.absoluteString)
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    proxy.appDidBecomeActive()
+                }
             }
         }
     }
@@ -296,6 +302,18 @@ private struct ImportPanel: View {
                     .lineLimit(3...6)
                     .padding(10)
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Button("Cancel") {
+                                importFocused.wrappedValue = false
+                            }
+                            Spacer()
+                            Button("Done") {
+                                importFocused.wrappedValue = false
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
 
                 HStack(spacing: 10) {
                     Button(action: paste) {
