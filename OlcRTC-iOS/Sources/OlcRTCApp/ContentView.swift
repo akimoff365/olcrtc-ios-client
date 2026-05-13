@@ -50,6 +50,7 @@ struct ContentView: View {
                     LabeledContent("SOCKS", value: proxy.status.rawValue)
                     LabeledContent("Address", value: "127.0.0.1:\(proxy.socksPort)")
                     LabeledContent("Auth", value: "None")
+                    LabeledContent("Reconnects", value: "\(proxy.reconnectCount)")
                     if let message = proxy.lastMessage {
                         Text(message)
                             .font(.footnote)
@@ -67,10 +68,17 @@ struct ContentView: View {
             }
             .navigationTitle("OlcRTC")
             .toolbar {
-                Button("Stop") {
-                    proxy.stop()
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Reconnect") {
+                        proxy.reconnect()
+                    }
+                    .disabled(proxy.activeProfile == nil || proxy.status == .stopped || proxy.status == .starting || proxy.status == .reconnecting)
+
+                    Button("Stop") {
+                        proxy.stop()
+                    }
+                    .disabled(proxy.status == .stopped)
                 }
-                .disabled(proxy.status == .stopped)
             }
         }
     }
@@ -164,7 +172,7 @@ private struct ProxyDetailsView: View {
 
             Button(copied ? "Copied" : "Copy Proxy Settings", action: copy)
 
-            Text("Keep OlcRTC open while testing. Without NetworkExtension, iOS may suspend the local SOCKS process in the background.")
+            Text("OlcRTC waits for iOS to finish switching between Wi-Fi and LTE, then reconnects automatically. If Happ keeps an old failed connection, tap Reconnect here and reconnect in Happ.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
