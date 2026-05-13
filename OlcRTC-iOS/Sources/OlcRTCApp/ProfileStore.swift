@@ -23,6 +23,11 @@ final class ProfileStore: ObservableObject {
         save()
     }
 
+    func remove(_ profile: OlcRTCProfile) {
+        profiles.removeAll { $0.id == profile.id }
+        save()
+    }
+
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
             return

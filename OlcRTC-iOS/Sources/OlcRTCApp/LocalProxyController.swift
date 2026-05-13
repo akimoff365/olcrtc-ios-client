@@ -4,29 +4,36 @@ import Network
 @MainActor
 final class LocalProxyController: ObservableObject {
     enum Status: String {
-        case stopped = "Stopped"
-        case starting = "Starting"
-        case reconnecting = "Reconnecting"
-        case running = "Running"
-        case failed = "Failed"
+        case stopped = "Остановлен"
+        case starting = "Запускается"
+        case reconnecting = "Переподключение"
+        case running = "Работает"
+        case failed = "Ошибка"
     }
 
     @Published private(set) var status: Status = .stopped
     @Published private(set) var lastMessage: String?
     @Published private(set) var activeProfile: OlcRTCProfile?
     @Published private(set) var reconnectCount = 0
+    @Published private(set) var networkName = "Нет"
 
     let socksPort = 18080
-    private let pathMonitor = NWPathMonitor()
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
-    private var pathMonitorStarted = false
+    private var pathMonitor: NWPathMonitor?
     private var lastPathSignature: String?
     private var reconnectTask: Task<Void, Never>?
 
+    var canReconnect: Bool {
+        activeProfile != nil && status != .stopped && status != .starting && status != .reconnecting
+    }
+
     func start(profile: OlcRTCProfile) async {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         status = .starting
         lastMessage = nil
         lastPathSignature = nil
+        networkName = "Проверка"
 
         do {
             OlcRTCEngine.stop()
@@ -36,13 +43,15 @@ final class LocalProxyController: ObservableObject {
             try BackgroundKeepAlive.shared.start()
 
             activeProfile = profile
+            reconnectCount = 0
             status = .running
-            lastMessage = "Keep-alive is active. Use SOCKS5 127.0.0.1:\(socksPort) in Happ, Incy, or another client."
-            startPathMonitorIfNeeded()
+            lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort)"
+            startPathMonitor()
         } catch {
             OlcRTCEngine.stop()
             BackgroundKeepAlive.shared.stop()
             activeProfile = nil
+            networkName = "Нет"
             status = .failed
             lastMessage = error.localizedDescription
         }
@@ -53,7 +62,7 @@ final class LocalProxyController: ObservableObject {
             return
         }
 
-        scheduleReconnect(profile: activeProfile, reason: "Manual reconnect requested.", delayNanoseconds: 0)
+        scheduleReconnect(profile: activeProfile, reason: "Ручное переподключение...", delayNanoseconds: 0)
     }
 
     func stop() {
@@ -62,6 +71,10 @@ final class LocalProxyController: ObservableObject {
         OlcRTCEngine.stop()
         BackgroundKeepAlive.shared.stop()
         activeProfile = nil
+        reconnectCount = 0
+        networkName = "Нет"
+        lastPathSignature = nil
+        stopPathMonitor()
         status = .stopped
         lastMessage = nil
     }
@@ -84,48 +97,53 @@ final class LocalProxyController: ObservableObject {
 
             reconnectCount += 1
             status = .running
-            lastMessage = "Reconnected. Use SOCKS5 127.0.0.1:\(socksPort) in Happ, Incy, or another client."
+            lastMessage = "Переподключено. SOCKS5: 127.0.0.1:\(socksPort)"
         } catch {
             OlcRTCEngine.stop()
             status = .failed
-            lastMessage = "Reconnect failed: \(error.localizedDescription). Wait a few seconds, then tap Reconnect."
+            lastMessage = "Не удалось переподключиться: \(error.localizedDescription)"
         }
     }
 
-    private func startPathMonitorIfNeeded() {
-        guard !pathMonitorStarted else {
-            return
-        }
+    private func startPathMonitor() {
+        stopPathMonitor()
 
-        pathMonitorStarted = true
+        let pathMonitor = NWPathMonitor()
         pathMonitor.pathUpdateHandler = { [weak self] path in
-            let signature = Self.pathSignature(path)
-            let isSatisfied = path.status == .satisfied
+            let snapshot = Self.snapshot(from: path)
             Task { @MainActor [weak self] in
-                self?.handlePathUpdate(signature: signature, isSatisfied: isSatisfied)
+                self?.handlePathUpdate(snapshot)
             }
         }
         pathMonitor.start(queue: pathQueue)
+        self.pathMonitor = pathMonitor
     }
 
-    private func handlePathUpdate(signature: String, isSatisfied: Bool) {
+    private func stopPathMonitor() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
+
+    private func handlePathUpdate(_ snapshot: NetworkPathSnapshot) {
+        networkName = snapshot.name
+
         if lastPathSignature == nil {
-            lastPathSignature = signature
+            lastPathSignature = snapshot.signature
             return
         }
 
-        guard lastPathSignature != signature else {
+        guard lastPathSignature != snapshot.signature else {
             return
         }
 
-        lastPathSignature = signature
+        lastPathSignature = snapshot.signature
         guard let activeProfile else {
             return
         }
 
-        guard isSatisfied else {
+        guard snapshot.isSatisfied else {
             if status == .running || status == .reconnecting {
-                lastMessage = "Network is switching. Waiting for a usable connection..."
+                lastMessage = "Сеть переключается. Жду рабочее соединение..."
             }
             return
         }
@@ -134,7 +152,7 @@ final class LocalProxyController: ObservableObject {
             return
         }
 
-        scheduleReconnect(profile: activeProfile, reason: "Network changed. Reconnecting olcrtc...", delayNanoseconds: 1_800_000_000)
+        scheduleReconnect(profile: activeProfile, reason: "Сеть изменилась. Переподключаю olcrtc...", delayNanoseconds: 1_800_000_000)
     }
 
     private func scheduleReconnect(profile: OlcRTCProfile, reason: String, delayNanoseconds: UInt64) {
@@ -150,13 +168,39 @@ final class LocalProxyController: ObservableObject {
         }
     }
 
-    nonisolated private static func pathSignature(_ path: NWPath) -> String {
-        let interfaces = path.availableInterfaces
-            .filter { path.usesInterfaceType($0.type) }
-            .map { "\($0.type)" }
-            .sorted()
-            .joined(separator: ",")
+    nonisolated private static func snapshot(from path: NWPath) -> NetworkPathSnapshot {
+        let interfaces: [(NWInterface.InterfaceType, String)] = [
+            (.wifi, "Wi-Fi"),
+            (.cellular, "LTE"),
+            (.wiredEthernet, "Ethernet"),
+            (.loopback, "Loopback"),
+            (.other, "Другая")
+        ]
 
-        return "\(path.status)|\(path.isExpensive)|\(path.isConstrained)|\(interfaces)"
+        let names = interfaces
+            .filter { path.usesInterfaceType($0.0) }
+            .map(\.1)
+
+        let statusName: String
+        switch path.status {
+        case .satisfied:
+            statusName = "online"
+        case .unsatisfied:
+            statusName = "offline"
+        case .requiresConnection:
+            statusName = "waiting"
+        @unknown default:
+            statusName = "unknown"
+        }
+
+        let visibleName = names.isEmpty ? "Нет" : names.joined(separator: " + ")
+        let signature = "\(statusName)|\(path.isExpensive)|\(path.isConstrained)|\(visibleName)"
+        return NetworkPathSnapshot(signature: signature, name: visibleName, isSatisfied: path.status == .satisfied)
     }
+}
+
+private struct NetworkPathSnapshot {
+    let signature: String
+    let name: String
+    let isSatisfied: Bool
 }

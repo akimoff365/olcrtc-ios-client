@@ -34,7 +34,7 @@ extension OlcRTCProfile {
         }
 
         let splitKey = splitClient.left.splitOnce(separator: "#")
-        guard let keyHex = splitKey.right, keyHex.count == 64 else {
+        guard let keyHex = splitKey.right, keyHex.isHexKey else {
             throw ParseError.invalidKey
         }
 
@@ -54,13 +54,13 @@ extension OlcRTCProfile {
         }
 
         let parsedTransport = Self.parseTransport(transportPart)
-        self.carrier = carrier
+        self.carrier = carrier.percentDecoded
         self.transport = parsedTransport.name
         self.payload = parsedTransport.payload
-        self.roomID = roomID
+        self.roomID = roomID.percentDecoded
         self.keyHex = keyHex
-        self.clientID = clientID
-        self.comment = comment
+        self.clientID = clientID.percentDecoded
+        self.comment = comment.percentDecoded
     }
 
     private static func parseTransport(_ value: String) -> (name: String, payload: [String: String]) {
@@ -77,11 +77,11 @@ extension OlcRTCProfile {
         for item in payloadBody.split(separator: "&") {
             let pair = String(item).splitOnce(separator: "=")
             if let right = pair.right {
-                payload[pair.left] = right
+                payload[pair.left.percentDecoded] = right.percentDecoded
             }
         }
 
-        return (name, payload)
+        return (name.percentDecoded, payload)
     }
 
     enum ParseError: LocalizedError {
@@ -112,6 +112,14 @@ extension OlcRTCProfile {
 }
 
 private extension String {
+    var percentDecoded: String {
+        removingPercentEncoding ?? self
+    }
+
+    var isHexKey: Bool {
+        count == 64 && allSatisfy { $0.isHexDigit }
+    }
+
     func splitOnce(separator: Character) -> (left: String, right: String?) {
         guard let index = firstIndex(of: separator) else {
             return (self, nil)

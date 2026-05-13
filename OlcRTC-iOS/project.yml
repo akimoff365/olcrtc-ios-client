@@ -18,6 +18,10 @@ targets:
       path: Sources/OlcRTCApp/Info.plist
       properties:
         CFBundleDisplayName: OlcRTC
+        CFBundleURLTypes:
+          - CFBundleURLName: ru.pasklove.olcrtc
+            CFBundleURLSchemes:
+              - olcrtc
         UILaunchScreen: {}
         UIBackgroundModes:
           - audio
