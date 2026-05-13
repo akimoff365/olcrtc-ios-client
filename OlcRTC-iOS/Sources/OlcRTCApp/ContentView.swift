@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var importText = ""
     @State private var importError: String?
     @State private var copiedProxy: ProxyCopyKind?
+    @State private var copiedLogs = false
     @FocusState private var importFocused: Bool
 
     var body: some View {
@@ -20,6 +21,7 @@ struct ContentView: View {
                         status: proxy.status,
                         networkName: proxy.networkName,
                         activeProfile: proxy.activeProfile,
+                        healthState: proxy.healthState,
                         reconnectCount: proxy.reconnectCount,
                         lastMessage: proxy.lastMessage,
                         restart: proxy.restartSocks,
@@ -55,6 +57,12 @@ struct ContentView: View {
                         copySocksLink: copySocksLink,
                         copySocks5Link: copySocks5Link,
                         copySettings: copyProxySettings
+                    )
+
+                    DiagnosticsPanel(
+                        logs: proxy.logs,
+                        copied: copiedLogs,
+                        copy: copyLogs
                     )
                 }
                 .padding(16)
@@ -131,6 +139,17 @@ struct ContentView: View {
         #endif
     }
 
+    private func copyLogs() {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = proxy.logText
+        copiedLogs = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copiedLogs = false
+        }
+        #endif
+    }
+
     private func markCopied(_ kind: ProxyCopyKind) {
         copiedProxy = kind
         Task {
@@ -146,6 +165,7 @@ private struct ConnectionPanel: View {
     let status: LocalProxyController.Status
     let networkName: String
     let activeProfile: OlcRTCProfile?
+    let healthState: LocalProxyController.HealthState
     let reconnectCount: Int
     let lastMessage: String?
     let restart: () -> Void
@@ -188,6 +208,7 @@ private struct ConnectionPanel: View {
                 HStack(spacing: 16) {
                     MetricView(title: "Restarts", value: "\(reconnectCount)")
                     MetricView(title: "Auth", value: "On")
+                    MetricView(title: "Health", value: healthState.rawValue)
                 }
 
                 if let lastMessage {
@@ -389,6 +410,62 @@ private struct ProxyPanel: View {
     }
 }
 
+private struct DiagnosticsPanel: View {
+    let logs: [ProxyLogEntry]
+    let copied: Bool
+    let copy: () -> Void
+
+    var body: some View {
+        Panel(title: "Диагностика", systemImage: "list.bullet.rectangle") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Последние события")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: copy) {
+                        Label(copied ? "Скопировано" : "Копировать лог", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(logs.isEmpty)
+                }
+
+                if logs.isEmpty {
+                    ContentUnavailableView("Лог пуст", systemImage: "doc.text")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(logs.prefix(12))) { entry in
+                            LogRow(entry: entry)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct LogRow: View {
+    let entry: ProxyLogEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: entry.level.symbolName)
+                .foregroundStyle(entry.level.tint)
+                .frame(width: 18)
+
+            Text(entry.line)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(8)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 private struct Panel<Content: View>: View {
     let title: String
     let systemImage: String
@@ -457,6 +534,34 @@ private struct MetricView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private extension ProxyLogEntry.Level {
+    var tint: Color {
+        switch self {
+        case .info:
+            return .blue
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        case .debug:
+            return .secondary
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .info:
+            return "info.circle.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
+        case .error:
+            return "xmark.octagon.fill"
+        case .debug:
+            return "wrench.and.screwdriver.fill"
+        }
     }
 }
 

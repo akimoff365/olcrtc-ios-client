@@ -12,30 +12,51 @@ final class LocalProxyController: ObservableObject {
         case failed = "Ошибка"
     }
 
+    enum HealthState: String {
+        case idle = "Нет"
+        case checking = "Проверка"
+        case healthy = "Порт жив"
+        case unhealthy = "Порт недоступен"
+    }
+
     @Published private(set) var status: Status = .stopped
     @Published private(set) var lastMessage: String?
     @Published private(set) var activeProfile: OlcRTCProfile?
     @Published private(set) var reconnectCount = 0
     @Published private(set) var networkName = "Нет"
     @Published private(set) var credentials = SocksCredentials.load()
+    @Published private(set) var healthState: HealthState = .idle
+    @Published private(set) var logs: [ProxyLogEntry] = []
 
     let socksPort = 18080
+    private let watchdogInitialDelayNanoseconds: UInt64 = 20_000_000_000
+    private let watchdogIntervalNanoseconds: UInt64 = 45_000_000_000
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
     private var pathMonitor: NWPathMonitor?
     private var lastPathSignature: String?
     private var reconnectTask: Task<Void, Never>?
+    private var watchdogTask: Task<Void, Never>?
+    private var consecutiveHealthFailures = 0
 
     var canRestart: Bool {
         activeProfile != nil && status != .stopped && status != .starting && status != .restarting
     }
 
+    var logText: String {
+        logs.map(\.line).joined(separator: "\n")
+    }
+
     func start(profile: OlcRTCProfile) async {
         reconnectTask?.cancel()
         reconnectTask = nil
+        stopWatchdog()
         status = .starting
         lastMessage = nil
         lastPathSignature = nil
         networkName = "Проверка"
+        healthState = .checking
+        consecutiveHealthFailures = 0
+        appendLog(.info, "Starting profile: \(profile.displayName)")
 
         do {
             OlcRTCEngine.stop()
@@ -51,13 +72,17 @@ final class LocalProxyController: ObservableObject {
             status = .running
             lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort), auth включен"
             startPathMonitor()
+            startWatchdog()
+            appendLog(.info, "SOCKS is ready on 127.0.0.1:\(socksPort)")
         } catch {
             OlcRTCEngine.stop()
             BackgroundKeepAlive.shared.stop()
             activeProfile = nil
             networkName = "Нет"
+            healthState = .unhealthy
             status = .failed
             lastMessage = error.localizedDescription
+            appendLog(.error, "Start failed: \(error.localizedDescription)")
         }
     }
 
@@ -72,15 +97,19 @@ final class LocalProxyController: ObservableObject {
     func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        stopWatchdog()
         OlcRTCEngine.stop()
         BackgroundKeepAlive.shared.stop()
         activeProfile = nil
         reconnectCount = 0
         networkName = "Нет"
+        healthState = .idle
+        consecutiveHealthFailures = 0
         lastPathSignature = nil
         stopPathMonitor()
         status = .stopped
         lastMessage = nil
+        appendLog(.info, "Stopped")
     }
 
     private func restartNow(profile: OlcRTCProfile, reason: String) async {
@@ -90,6 +119,7 @@ final class LocalProxyController: ObservableObject {
 
         status = .restarting
         lastMessage = reason
+        appendLog(.info, reason)
 
         do {
             OlcRTCEngine.stop()
@@ -102,12 +132,17 @@ final class LocalProxyController: ObservableObject {
 
             credentials = SocksCredentials.load()
             reconnectCount += 1
+            consecutiveHealthFailures = 0
+            healthState = .healthy
             status = .running
             lastMessage = "SOCKS перезапущен. Теперь включи профиль во внешнем VPN-клиенте."
+            appendLog(.info, "SOCKS restarted on 127.0.0.1:\(socksPort)")
         } catch {
             OlcRTCEngine.stop()
+            healthState = .unhealthy
             status = .failed
             lastMessage = "Не удалось перезапустить SOCKS: \(error.localizedDescription)"
+            appendLog(.error, "Restart failed: \(error.localizedDescription)")
         }
     }
 
@@ -150,6 +185,7 @@ final class LocalProxyController: ObservableObject {
         guard snapshot.isSatisfied else {
             if status == .running || status == .restarting {
                 lastMessage = "Сеть переключается. Жду рабочее соединение..."
+                appendLog(.warning, "Network is switching")
             }
             return
         }
@@ -160,6 +196,7 @@ final class LocalProxyController: ObservableObject {
 
         status = .needsTunnelRestart
         lastMessage = "Сеть изменилась. Отключи туннель во внешнем VPN-клиенте, нажми Restart SOCKS, затем включи туннель обратно."
+        appendLog(.warning, "Network changed to \(snapshot.name). External VPN tunnel restart is required.")
     }
 
     private func scheduleRestart(profile: OlcRTCProfile, reason: String, delayNanoseconds: UInt64) {
@@ -172,6 +209,63 @@ final class LocalProxyController: ObservableObject {
                 return
             }
             await restartNow(profile: profile, reason: reason)
+        }
+    }
+
+    private func startWatchdog() {
+        stopWatchdog()
+        let initialDelay = watchdogInitialDelayNanoseconds
+        let interval = watchdogIntervalNanoseconds
+        watchdogTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: initialDelay)
+            while !Task.isCancelled {
+                await self?.runWatchdogTick()
+                try? await Task.sleep(nanoseconds: interval)
+            }
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
+    }
+
+    private func runWatchdogTick() async {
+        guard status == .running, let activeProfile else {
+            return
+        }
+
+        let previousHealth = healthState
+        healthState = .checking
+        let isAlive = await OlcRTCEngine.checkLocalSocks(port: socksPort)
+
+        guard status == .running else {
+            return
+        }
+
+        if isAlive {
+            consecutiveHealthFailures = 0
+            healthState = .healthy
+            if previousHealth != .healthy {
+                appendLog(.info, "Watchdog: local SOCKS port is alive")
+            }
+            return
+        }
+
+        consecutiveHealthFailures += 1
+        healthState = .unhealthy
+        appendLog(.warning, "Watchdog: local SOCKS port is not accepting connections (\(consecutiveHealthFailures)/2)")
+
+        if consecutiveHealthFailures >= 2 {
+            appendLog(.warning, "Watchdog: restarting local SOCKS after repeated failures")
+            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: локальный порт не отвечает.", delayNanoseconds: 0)
+        }
+    }
+
+    private func appendLog(_ level: ProxyLogEntry.Level, _ message: String) {
+        logs.insert(ProxyLogEntry(date: Date(), level: level, message: message), at: 0)
+        if logs.count > 160 {
+            logs.removeLast(logs.count - 160)
         }
     }
 
