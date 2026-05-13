@@ -17,6 +17,8 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    AppHeader()
+
                     ConnectionPanel(
                         status: proxy.status,
                         networkName: proxy.networkName,
@@ -174,51 +176,106 @@ private struct ConnectionPanel: View {
     let canStop: Bool
 
     var body: some View {
-        Panel(title: "Подключение", systemImage: status.symbolName) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
+        Panel(title: "Gateway", systemImage: status.symbolName) {
+            VStack(spacing: 16) {
+                HStack(spacing: 10) {
                     StatusBadge(status: status)
                     Spacer()
                     NetworkBadge(name: networkName)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(activeProfile?.displayName ?? "Профиль не выбран")
-                        .font(.title3.weight(.semibold))
-                        .lineLimit(2)
-                    Text(activeProfile.map { "\($0.carrier) / \($0.transport)" } ?? "SOCKS выключен")
+                ZStack {
+                    Circle()
+                        .fill(status.tint.opacity(0.12))
+                        .frame(width: 124, height: 124)
+                    Circle()
+                        .stroke(status.tint.opacity(0.28), lineWidth: 2)
+                        .frame(width: 94, height: 94)
+                    Image(systemName: status.symbolName)
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(status.tint)
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(spacing: 5) {
+                    Text(status.rawValue)
+                        .font(.title2.weight(.bold))
+                    Text(activeProfile?.displayName ?? "Выбери профиль ниже")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                    if let activeProfile {
+                        Text("\(activeProfile.carrier) / \(activeProfile.transport)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
 
                 HStack(spacing: 10) {
                     Button(action: restart) {
                         Label("Restart SOCKS", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .disabled(!canRestart)
 
                     Button(role: .destructive, action: stop) {
-                        Label("Stop", systemImage: "stop.fill")
+                        Image(systemName: "stop.fill")
+                            .frame(width: 42, height: 28)
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.large)
                     .disabled(!canStop)
                 }
 
-                HStack(spacing: 16) {
+                HStack(spacing: 10) {
+                    MetricView(title: "Health", value: healthState.rawValue)
                     MetricView(title: "Restarts", value: "\(reconnectCount)")
                     MetricView(title: "Auth", value: "On")
-                    MetricView(title: "Health", value: healthState.rawValue)
                 }
 
                 if let lastMessage {
                     Text(lastMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+    }
+}
+
+private struct AppHeader: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(0.14))
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("OlcRTC Gateway")
+                    .font(.title3.weight(.bold))
+                Text("Local SOCKS bridge for external VPN clients")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
     }
 }
 
@@ -499,6 +556,8 @@ private struct StatusBadge: View {
                 .frame(width: 10, height: 10)
             Text(status.rawValue)
                 .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -513,6 +572,8 @@ private struct NetworkBadge: View {
         Label(name, systemImage: "antenna.radiowaves.left.and.right")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Color(.secondarySystemGroupedBackground), in: Capsule())
@@ -530,6 +591,8 @@ private struct MetricView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.callout.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)

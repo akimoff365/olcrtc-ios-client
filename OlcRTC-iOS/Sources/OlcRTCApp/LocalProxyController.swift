@@ -15,8 +15,8 @@ final class LocalProxyController: ObservableObject {
     enum HealthState: String {
         case idle = "Нет"
         case checking = "Проверка"
-        case healthy = "Порт жив"
-        case unhealthy = "Порт недоступен"
+        case healthy = "SOCKS OK"
+        case unhealthy = "SOCKS недоступен"
     }
 
     @Published private(set) var status: Status = .stopped
@@ -66,9 +66,15 @@ final class LocalProxyController: ObservableObject {
             }.value
             try BackgroundKeepAlive.shared.start()
 
-            credentials = SocksCredentials.load()
+            let currentCredentials = SocksCredentials.load()
+            credentials = currentCredentials
+            guard await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: currentCredentials) else {
+                throw ControllerError.localSocksAuthFailed
+            }
+
             activeProfile = profile
             reconnectCount = 0
+            healthState = .healthy
             status = .running
             lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort), auth включен"
             startPathMonitor()
@@ -130,7 +136,12 @@ final class LocalProxyController: ObservableObject {
             }.value
             try BackgroundKeepAlive.shared.start()
 
-            credentials = SocksCredentials.load()
+            let currentCredentials = SocksCredentials.load()
+            credentials = currentCredentials
+            guard await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: currentCredentials) else {
+                throw ControllerError.localSocksAuthFailed
+            }
+
             reconnectCount += 1
             consecutiveHealthFailures = 0
             healthState = .healthy
@@ -237,7 +248,7 @@ final class LocalProxyController: ObservableObject {
 
         let previousHealth = healthState
         healthState = .checking
-        let isAlive = await OlcRTCEngine.checkLocalSocks(port: socksPort)
+        let isAlive = await OlcRTCEngine.checkLocalSocks(port: socksPort, credentials: credentials)
 
         guard status == .running else {
             return
@@ -247,18 +258,18 @@ final class LocalProxyController: ObservableObject {
             consecutiveHealthFailures = 0
             healthState = .healthy
             if previousHealth != .healthy {
-                appendLog(.info, "Watchdog: local SOCKS port is alive")
+            appendLog(.info, "Watchdog: SOCKS5 auth handshake passed")
             }
             return
         }
 
         consecutiveHealthFailures += 1
         healthState = .unhealthy
-        appendLog(.warning, "Watchdog: local SOCKS port is not accepting connections (\(consecutiveHealthFailures)/2)")
+        appendLog(.warning, "Watchdog: SOCKS5 auth handshake failed (\(consecutiveHealthFailures)/2)")
 
         if consecutiveHealthFailures >= 2 {
             appendLog(.warning, "Watchdog: restarting local SOCKS after repeated failures")
-            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: локальный порт не отвечает.", delayNanoseconds: 0)
+            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: auth-handshake не проходит.", delayNanoseconds: 0)
         }
     }
 
@@ -304,4 +315,15 @@ private struct NetworkPathSnapshot {
     let signature: String
     let name: String
     let isSatisfied: Bool
+}
+
+private enum ControllerError: LocalizedError {
+    case localSocksAuthFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .localSocksAuthFailed:
+            return "SOCKS5 запустился, но не прошел локальную проверку авторизации."
+        }
+    }
 }

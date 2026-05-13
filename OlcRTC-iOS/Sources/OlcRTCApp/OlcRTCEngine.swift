@@ -56,10 +56,10 @@ enum OlcRTCEngine {
         #endif
     }
 
-    static func checkLocalSocks(port: Int, timeoutNanoseconds: UInt64 = 3_000_000_000) async -> Bool {
+    static func checkLocalSocks(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 3_000_000_000) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             group.addTask {
-                await Self.tcpConnects(port: port)
+                await Self.socksAuthHandshake(port: port, credentials: credentials)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
@@ -72,9 +72,13 @@ enum OlcRTCEngine {
         }
     }
 
-    private static func tcpConnects(port: Int) async -> Bool {
+    private static func socksAuthHandshake(port: Int, credentials: SocksCredentials) async -> Bool {
         await Task.detached(priority: .utility) {
-            guard (1...65_535).contains(port) else {
+            let username = Array(credentials.username.utf8)
+            let password = Array(credentials.password.utf8)
+            guard (1...65_535).contains(port),
+                  username.count <= 255,
+                  password.count <= 255 else {
                 return false
             }
 
@@ -85,6 +89,7 @@ enum OlcRTCEngine {
             defer {
                 close(descriptor)
             }
+            Self.setSocketTimeouts(descriptor)
 
             var address = sockaddr_in()
             address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -102,8 +107,82 @@ enum OlcRTCEngine {
                 }
             }
 
-            return result == 0
+            guard result == 0 else {
+                return false
+            }
+
+            guard Self.writeAll([0x05, 0x01, 0x02], to: descriptor),
+                  Self.readExact(2, from: descriptor) == [0x05, 0x02] else {
+                return false
+            }
+
+            var authRequest: [UInt8] = [0x01, UInt8(username.count)]
+            authRequest.append(contentsOf: username)
+            authRequest.append(UInt8(password.count))
+            authRequest.append(contentsOf: password)
+
+            return Self.writeAll(authRequest, to: descriptor)
+                && Self.readExact(2, from: descriptor) == [0x01, 0x00]
         }.value
+    }
+
+    private static func setSocketTimeouts(_ descriptor: Int32) {
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        withUnsafePointer(to: &timeout) { pointer in
+            _ = setsockopt(
+                descriptor,
+                SOL_SOCKET,
+                SO_RCVTIMEO,
+                pointer,
+                socklen_t(MemoryLayout<timeval>.size)
+            )
+            _ = setsockopt(
+                descriptor,
+                SOL_SOCKET,
+                SO_SNDTIMEO,
+                pointer,
+                socklen_t(MemoryLayout<timeval>.size)
+            )
+        }
+    }
+
+    private static func writeAll(_ bytes: [UInt8], to descriptor: Int32) -> Bool {
+        var offset = 0
+        while offset < bytes.count {
+            let written = bytes.withUnsafeBytes { rawBuffer in
+                Darwin.send(
+                    descriptor,
+                    rawBuffer.baseAddress!.advanced(by: offset),
+                    bytes.count - offset,
+                    0
+                )
+            }
+            guard written > 0 else {
+                return false
+            }
+            offset += written
+        }
+        return true
+    }
+
+    private static func readExact(_ count: Int, from descriptor: Int32) -> [UInt8]? {
+        var bytes = [UInt8](repeating: 0, count: count)
+        var offset = 0
+        while offset < count {
+            let received = bytes.withUnsafeMutableBytes { rawBuffer in
+                Darwin.recv(
+                    descriptor,
+                    rawBuffer.baseAddress!.advanced(by: offset),
+                    count - offset,
+                    0
+                )
+            }
+            guard received > 0 else {
+                return nil
+            }
+            offset += received
+        }
+        return bytes
     }
 
     enum RuntimeError: LocalizedError {
