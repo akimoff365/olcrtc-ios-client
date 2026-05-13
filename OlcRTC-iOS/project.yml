@@ -19,6 +19,8 @@ targets:
       properties:
         CFBundleDisplayName: OlcRTC
         UILaunchScreen: {}
+        UIBackgroundModes:
+          - audio
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
     entitlements:

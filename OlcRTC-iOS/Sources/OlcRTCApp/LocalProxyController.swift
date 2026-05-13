@@ -24,11 +24,14 @@ final class LocalProxyController: ObservableObject {
             try await Task.detached(priority: .userInitiated) { [socksPort] in
                 try OlcRTCEngine.start(profile: profile, socksPort: socksPort)
             }.value
+            try BackgroundKeepAlive.shared.start()
 
             activeProfile = profile
             status = .running
-            lastMessage = "Use SOCKS5 127.0.0.1:\(socksPort) in Happ, Incy, or another client."
+            lastMessage = "Keep-alive is active. Use SOCKS5 127.0.0.1:\(socksPort) in Happ, Incy, or another client."
         } catch {
+            OlcRTCEngine.stop()
+            BackgroundKeepAlive.shared.stop()
             activeProfile = nil
             status = .failed
             lastMessage = error.localizedDescription
@@ -37,6 +40,7 @@ final class LocalProxyController: ObservableObject {
 
     func stop() {
         OlcRTCEngine.stop()
+        BackgroundKeepAlive.shared.stop()
         activeProfile = nil
         status = .stopped
         lastMessage = nil
