@@ -10,6 +10,8 @@ struct ContentView: View {
     @EnvironmentObject private var proxy: LocalProxyController
     @State private var importText = ""
     @State private var importError: String?
+    @State private var importMessage: String?
+    @State private var isImporting = false
     @State private var copiedProxy: ProxyCopyKind?
     @State private var copiedLogs = false
     @FocusState private var importFocused: Bool
@@ -36,6 +38,8 @@ struct ContentView: View {
                     ImportPanel(
                         importText: $importText,
                         importError: importError,
+                        importMessage: importMessage,
+                        isImporting: isImporting,
                         importFocused: $importFocused,
                         paste: pasteProfile,
                         submit: { importProfile(from: importText) }
@@ -104,19 +108,39 @@ struct ContentView: View {
         #if canImport(UIKit)
         if let value = UIPasteboard.general.string {
             importText = value
+            importError = nil
+            importMessage = nil
         }
         #endif
     }
 
     private func importProfile(from rawValue: String) {
-        do {
-            let profile = try OlcRTCProfile(uri: rawValue)
-            store.upsert(profile)
-            importText = ""
-            importError = nil
-            importFocused = false
-        } catch {
-            importError = error.localizedDescription
+        guard !isImporting else {
+            return
+        }
+
+        Task {
+            await MainActor.run {
+                isImporting = true
+                importError = nil
+                importMessage = nil
+                importFocused = false
+            }
+
+            do {
+                let result = try await SubscriptionImporter.importValue(rawValue)
+                await MainActor.run {
+                    store.upsert(result.profiles)
+                    importText = ""
+                    importMessage = result.userMessage
+                    isImporting = false
+                }
+            } catch {
+                await MainActor.run {
+                    importError = error.localizedDescription
+                    isImporting = false
+                }
+            }
         }
     }
 
@@ -297,6 +321,8 @@ private struct AppHeader: View {
 private struct ImportPanel: View {
     @Binding var importText: String
     let importError: String?
+    let importMessage: String?
+    let isImporting: Bool
     var importFocused: FocusState<Bool>.Binding
     let paste: () -> Void
     let submit: () -> Void
@@ -304,11 +330,11 @@ private struct ImportPanel: View {
     var body: some View {
         Panel(title: "Импорт профиля", systemImage: "link.badge.plus") {
             VStack(alignment: .leading, spacing: 10) {
-                TextField("olcrtc://...", text: $importText, axis: .vertical)
+                TextField("olcrtc://, https://subscription или sub.md", text: $importText, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused(importFocused)
-                    .lineLimit(3...6)
+                    .lineLimit(4...8)
                     .padding(10)
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
                     .toolbar {
@@ -327,20 +353,34 @@ private struct ImportPanel: View {
                 HStack(spacing: 10) {
                     Button(action: paste) {
                         Label("Вставить", systemImage: "doc.on.clipboard")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
 
                     Button(action: submit) {
-                        Label("Импорт", systemImage: "square.and.arrow.down")
+                        if isImporting {
+                            HStack {
+                                ProgressView()
+                                Text("Загрузка")
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Импорт", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isImporting || importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
                 if let importError {
                     Label(importError, systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
                         .foregroundStyle(.red)
+                } else if let importMessage {
+                    Label(importMessage, systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
                 }
             }
         }
@@ -362,6 +402,13 @@ private struct ProfilesPanel: View {
                     .padding(.vertical, 18)
             } else {
                 VStack(spacing: 8) {
+                    HStack {
+                        Text("\(profiles.count) active")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+
                     ForEach(profiles) { profile in
                         ProfileRow(
                             profile: profile,
@@ -395,10 +442,10 @@ private struct ProfileRow: View {
                 Text(profile.displayName)
                     .font(.headline)
                     .lineLimit(1)
-                Text("\(profile.carrier) / \(profile.transport)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    MiniPill(text: profile.carrier)
+                    MiniPill(text: profile.transport)
+                }
                 Text(profile.clientID)
                     .font(.caption.monospaced())
                     .foregroundStyle(.tertiary)
@@ -420,6 +467,21 @@ private struct ProfileRow: View {
         }
         .padding(10)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct MiniPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
     }
 }
 

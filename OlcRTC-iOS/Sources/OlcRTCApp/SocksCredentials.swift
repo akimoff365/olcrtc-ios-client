@@ -6,9 +6,16 @@ struct SocksCredentials: Codable, Equatable, Sendable {
     let password: String
 
     static func load() -> SocksCredentials {
-        let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: storageKey),
+        if let data = KeychainStore.read(service: keychainService, account: keychainAccount),
            let credentials = try? JSONDecoder().decode(SocksCredentials.self, from: data) {
+            return credentials
+        }
+
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: legacyStorageKey),
+           let credentials = try? JSONDecoder().decode(SocksCredentials.self, from: data) {
+            credentials.save()
+            defaults.removeObject(forKey: legacyStorageKey)
             return credentials
         }
 
@@ -22,7 +29,7 @@ struct SocksCredentials: Codable, Equatable, Sendable {
 
     func save() {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.storageKey)
+            KeychainStore.save(data, service: Self.keychainService, account: Self.keychainAccount)
         }
     }
 
@@ -38,7 +45,9 @@ struct SocksCredentials: Codable, Equatable, Sendable {
         return "socks://\(encoded)#OlcRTC"
     }
 
-    private static let storageKey = "olcrtc.socks.credentials"
+    private static let legacyStorageKey = "olcrtc.socks.credentials"
+    private static let keychainService = "ru.pasklove.olcrtc.socks"
+    private static let keychainAccount = "default"
 
     private static func token(length: Int) -> String {
         let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")

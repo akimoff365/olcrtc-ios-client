@@ -1,0 +1,9 @@
+artifacts*/
+OlcRTC-iOS/.build/
+OlcRTC-iOS/.derived-data/
+OlcRTC-iOS/.swiftpm/
+OlcRTC-iOS/Frameworks/Mobile.xcframework/
+OlcRTC-iOS/build/
+OlcRTC-iOS/DerivedData/
+*.xcuserstate
+*.xcuserdata/

@@ -27,8 +27,8 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var credentials = SocksCredentials.load()
     @Published private(set) var healthState: HealthState = .idle
     @Published private(set) var logs: [ProxyLogEntry] = []
+    @Published private(set) var socksPort = 18080
 
-    let socksPort = 18080
     private let watchdogInitialDelayNanoseconds: UInt64 = 20_000_000_000
     private let watchdogIntervalNanoseconds: UInt64 = 45_000_000_000
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
@@ -63,17 +63,24 @@ final class LocalProxyController: ObservableObject {
         appendLog(.info, "Starting profile: \(profile.displayName)")
 
         do {
-            try await Task.detached(priority: .userInitiated) { [socksPort] in
+            let requestedPort = socksPort
+            let startResult = try await Task.detached(priority: .userInitiated) {
                 let credentials = SocksCredentials.load()
                 OlcRTCEngine.stop()
                 Thread.sleep(forTimeInterval: 0.35)
-                try OlcRTCEngine.start(profile: profile, socksPort: socksPort, credentials: credentials)
+                let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
+                try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
+                return EngineStartResult(port: port, credentials: credentials)
             }.value
             try BackgroundKeepAlive.shared.start()
 
-            let currentCredentials = SocksCredentials.load()
-            credentials = currentCredentials
-            guard await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: currentCredentials) else {
+            socksPort = startResult.port
+            credentials = startResult.credentials
+            if startResult.port != requestedPort {
+                appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
+            }
+
+            guard await OlcRTCEngine.checkTunnelConnectivity(port: startResult.port, credentials: startResult.credentials) else {
                 throw ControllerError.tunnelConnectivityFailed
             }
 
@@ -84,7 +91,7 @@ final class LocalProxyController: ObservableObject {
             lastMessage = "Маршрут проверен. Теперь можно включать профиль во внешнем VPN-клиенте."
             startPathMonitor()
             startWatchdog()
-            appendLog(.success, "Tunnel CONNECT passed on 127.0.0.1:\(socksPort)")
+            appendLog(.success, "Tunnel CONNECT passed on 127.0.0.1:\(startResult.port)")
         } catch {
             stopEngineInBackground()
             BackgroundKeepAlive.shared.stop()
@@ -136,17 +143,24 @@ final class LocalProxyController: ObservableObject {
         appendLog(.info, reason)
 
         do {
-            try await Task.detached(priority: .userInitiated) { [socksPort] in
+            let requestedPort = socksPort
+            let startResult = try await Task.detached(priority: .userInitiated) {
                 let credentials = SocksCredentials.load()
                 OlcRTCEngine.stop()
                 Thread.sleep(forTimeInterval: 0.9)
-                try OlcRTCEngine.start(profile: profile, socksPort: socksPort, credentials: credentials)
+                let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
+                try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
+                return EngineStartResult(port: port, credentials: credentials)
             }.value
             try BackgroundKeepAlive.shared.start()
 
-            let currentCredentials = SocksCredentials.load()
-            credentials = currentCredentials
-            guard await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: currentCredentials) else {
+            socksPort = startResult.port
+            credentials = startResult.credentials
+            if startResult.port != requestedPort {
+                appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
+            }
+
+            guard await OlcRTCEngine.checkTunnelConnectivity(port: startResult.port, credentials: startResult.credentials) else {
                 throw ControllerError.tunnelConnectivityFailed
             }
 
@@ -395,6 +409,11 @@ private struct NetworkPathSnapshot {
     let signature: String
     let name: String
     let isSatisfied: Bool
+}
+
+private struct EngineStartResult: Sendable {
+    let port: Int
+    let credentials: SocksCredentials
 }
 
 private enum ControllerError: LocalizedError {

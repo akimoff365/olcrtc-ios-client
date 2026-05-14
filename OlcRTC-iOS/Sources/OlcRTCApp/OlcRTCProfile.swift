@@ -11,8 +11,50 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
     let clientID: String
     let comment: String
 
+    init(
+        carrier: String,
+        transport: String,
+        payload: [String: String],
+        roomID: String,
+        keyHex: String,
+        clientID: String,
+        comment: String
+    ) {
+        self.carrier = carrier
+        self.transport = transport
+        self.payload = payload
+        self.roomID = roomID
+        self.keyHex = keyHex
+        self.clientID = clientID
+        self.comment = comment
+    }
+
     var displayName: String {
         comment.isEmpty ? "\(carrier) \(transport)" : comment
+    }
+
+    func renamed(_ name: String) -> OlcRTCProfile {
+        OlcRTCProfile(
+            carrier: carrier,
+            transport: transport,
+            payload: payload,
+            roomID: roomID,
+            keyHex: keyHex,
+            clientID: clientID,
+            comment: name
+        )
+    }
+
+    func withKeyHex(_ newKeyHex: String) -> OlcRTCProfile {
+        OlcRTCProfile(
+            carrier: carrier,
+            transport: transport,
+            payload: payload,
+            roomID: roomID,
+            keyHex: newKeyHex,
+            clientID: clientID,
+            comment: comment
+        )
     }
 }
 

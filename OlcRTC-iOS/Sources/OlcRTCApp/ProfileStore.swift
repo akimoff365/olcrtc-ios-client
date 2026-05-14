@@ -16,8 +16,22 @@ final class ProfileStore: ObservableObject {
         save()
     }
 
+    func upsert(_ importedProfiles: [OlcRTCProfile]) {
+        guard !importedProfiles.isEmpty else {
+            return
+        }
+
+        let importedIDs = Set(importedProfiles.map(\.id))
+        profiles.removeAll { importedIDs.contains($0.id) }
+        profiles.insert(contentsOf: importedProfiles, at: 0)
+        save()
+    }
+
     func remove(at offsets: IndexSet) {
         for offset in offsets.sorted(by: >) {
+            if profiles.indices.contains(offset) {
+                ProfileSecretStore.deleteKeyHex(profileID: profiles[offset].id)
+            }
             profiles.remove(at: offset)
         }
         save()
@@ -25,6 +39,7 @@ final class ProfileStore: ObservableObject {
 
     func remove(_ profile: OlcRTCProfile) {
         profiles.removeAll { $0.id == profile.id }
+        ProfileSecretStore.deleteKeyHex(profileID: profile.id)
         save()
     }
 
@@ -33,11 +48,22 @@ final class ProfileStore: ObservableObject {
             return
         }
 
-        profiles = (try? JSONDecoder().decode([OlcRTCProfile].self, from: data)) ?? []
+        let decodedProfiles = (try? JSONDecoder().decode([OlcRTCProfile].self, from: data)) ?? []
+        profiles = decodedProfiles.map { profile in
+            profile.withKeyHex(ProfileSecretStore.loadKeyHex(profileID: profile.id) ?? profile.keyHex)
+        }
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(profiles) else {
+        profiles.forEach { profile in
+            ProfileSecretStore.saveKeyHex(profile.keyHex, profileID: profile.id)
+        }
+
+        let publicProfiles = profiles.map { profile in
+            profile.withKeyHex("")
+        }
+
+        guard let data = try? JSONEncoder().encode(publicProfiles) else {
             return
         }
 
