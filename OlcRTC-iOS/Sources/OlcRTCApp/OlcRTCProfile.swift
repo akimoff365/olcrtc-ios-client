@@ -1,6 +1,6 @@
 import Foundation
 
-struct OlcRTCProfile: Identifiable, Codable, Equatable {
+struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
     var id: String { "\(carrier)|\(transport)|\(roomID)|\(clientID)" }
 
     let carrier: String

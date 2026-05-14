@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-struct SocksCredentials: Codable, Equatable {
+struct SocksCredentials: Codable, Equatable, Sendable {
     let username: String
     let password: String
 

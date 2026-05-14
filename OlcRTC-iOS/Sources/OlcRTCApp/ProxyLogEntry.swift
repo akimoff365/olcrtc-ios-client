@@ -1,7 +1,7 @@
 import Foundation
 
-struct ProxyLogEntry: Identifiable, Equatable {
-    enum Level: String {
+struct ProxyLogEntry: Identifiable, Equatable, Sendable {
+    enum Level: String, Sendable {
         case info = "INFO"
         case success = "OK"
         case warning = "WARN"

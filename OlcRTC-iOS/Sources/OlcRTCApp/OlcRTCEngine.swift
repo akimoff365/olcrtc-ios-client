@@ -75,7 +75,12 @@ enum OlcRTCEngine {
     static func checkTunnelConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 8_000_000_000) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             group.addTask {
-                await Self.socksConnectProbe(port: port, credentials: credentials)
+                for target in SocksConnectTarget.defaults {
+                    if await Self.socksConnectProbe(port: port, credentials: credentials, target: target) {
+                        return true
+                    }
+                }
+                return false
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
@@ -142,7 +147,7 @@ enum OlcRTCEngine {
         }.value
     }
 
-    private static func socksConnectProbe(port: Int, credentials: SocksCredentials) async -> Bool {
+    private static func socksConnectProbe(port: Int, credentials: SocksCredentials, target: SocksConnectTarget) async -> Bool {
         await Task.detached(priority: .utility) {
             let username = Array(credentials.username.utf8)
             let password = Array(credentials.password.utf8)
@@ -196,13 +201,8 @@ enum OlcRTCEngine {
                 return false
             }
 
-            let connectToCloudflareHTTPS: [UInt8] = [
-                0x05, 0x01, 0x00, 0x01,
-                0x01, 0x01, 0x01, 0x01,
-                0x01, 0xbb
-            ]
-
-            guard Self.writeAll(connectToCloudflareHTTPS, to: descriptor),
+            guard let request = target.connectRequest,
+                  Self.writeAll(request, to: descriptor),
                   let header = Self.readExact(4, from: descriptor),
                   header.count == 4,
                   header[0] == 0x05,
@@ -303,5 +303,47 @@ enum OlcRTCEngine {
                 return "olcrtc SOCKS proxy was not ready in time."
             }
         }
+    }
+}
+
+private struct SocksConnectTarget: Sendable {
+    enum Address: Sendable {
+        case ipv4(String)
+        case domain(String)
+    }
+
+    let address: Address
+    let port: UInt16
+
+    static let defaults = [
+        SocksConnectTarget(address: .ipv4("1.1.1.1"), port: 443),
+        SocksConnectTarget(address: .ipv4("8.8.8.8"), port: 443),
+        SocksConnectTarget(address: .domain("www.apple.com"), port: 443)
+    ]
+
+    var connectRequest: [UInt8]? {
+        var request: [UInt8] = [0x05, 0x01, 0x00]
+
+        switch address {
+        case let .ipv4(value):
+            let parts = value.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4 else {
+                return nil
+            }
+            request.append(0x01)
+            request.append(contentsOf: parts)
+        case let .domain(value):
+            let host = Array(value.utf8)
+            guard !host.isEmpty, host.count <= 255 else {
+                return nil
+            }
+            request.append(0x03)
+            request.append(UInt8(host.count))
+            request.append(contentsOf: host)
+        }
+
+        request.append(UInt8(port >> 8))
+        request.append(UInt8(port & 0xff))
+        return request
     }
 }

@@ -15,8 +15,8 @@ final class LocalProxyController: ObservableObject {
     enum HealthState: String {
         case idle = "Нет"
         case checking = "Проверка"
-        case healthy = "SOCKS OK"
-        case unhealthy = "SOCKS недоступен"
+        case healthy = "Маршрут OK"
+        case unhealthy = "Нет маршрута"
     }
 
     @Published private(set) var status: Status = .stopped
@@ -36,7 +36,9 @@ final class LocalProxyController: ObservableObject {
     private var lastPathSignature: String?
     private var reconnectTask: Task<Void, Never>?
     private var watchdogTask: Task<Void, Never>?
+    private var foregroundCheckTask: Task<Void, Never>?
     private var consecutiveHealthFailures = 0
+    private var lastForegroundSuccessLogDate: Date?
 
     var canRestart: Bool {
         activeProfile != nil && status != .stopped && status != .starting && status != .restarting
@@ -49,6 +51,8 @@ final class LocalProxyController: ObservableObject {
     func start(profile: OlcRTCProfile) async {
         reconnectTask?.cancel()
         reconnectTask = nil
+        foregroundCheckTask?.cancel()
+        foregroundCheckTask = nil
         stopWatchdog()
         status = .starting
         lastMessage = nil
@@ -77,10 +81,10 @@ final class LocalProxyController: ObservableObject {
             reconnectCount = 0
             healthState = .healthy
             status = .running
-            lastMessage = "SOCKS5 готов: 127.0.0.1:\(socksPort), auth включен"
+            lastMessage = "Маршрут проверен. Теперь можно включать профиль во внешнем VPN-клиенте."
             startPathMonitor()
             startWatchdog()
-            appendLog(.success, "SOCKS tunnel check passed on 127.0.0.1:\(socksPort)")
+            appendLog(.success, "Tunnel CONNECT passed on 127.0.0.1:\(socksPort)")
         } catch {
             stopEngineInBackground()
             BackgroundKeepAlive.shared.stop()
@@ -104,6 +108,8 @@ final class LocalProxyController: ObservableObject {
     func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        foregroundCheckTask?.cancel()
+        foregroundCheckTask = nil
         stopWatchdog()
         stopEngineInBackground()
         BackgroundKeepAlive.shared.stop()
@@ -126,6 +132,7 @@ final class LocalProxyController: ObservableObject {
 
         status = .restarting
         lastMessage = reason
+        healthState = .checking
         appendLog(.info, reason)
 
         do {
@@ -147,8 +154,8 @@ final class LocalProxyController: ObservableObject {
             consecutiveHealthFailures = 0
             healthState = .healthy
             status = .running
-            lastMessage = "SOCKS перезапущен. Теперь включи профиль во внешнем VPN-клиенте."
-            appendLog(.success, "SOCKS tunnel check passed after restart")
+            lastMessage = "Маршрут снова проверен. Включи профиль во внешнем VPN-клиенте."
+            appendLog(.success, "Tunnel CONNECT passed after restart")
         } catch {
             stopEngineInBackground()
             healthState = .unhealthy
@@ -241,12 +248,18 @@ final class LocalProxyController: ObservableObject {
     }
 
     func appDidBecomeActive() {
-        guard status == .running else {
+        guard status == .running, foregroundCheckTask == nil else {
             return
         }
 
-        Task {
-            await verifyLocalSocksAfterForeground()
+        foregroundCheckTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            await self.verifyLocalSocksAfterForeground()
+            await MainActor.run {
+                self.foregroundCheckTask = nil
+            }
         }
     }
 
@@ -255,7 +268,10 @@ final class LocalProxyController: ObservableObject {
             return
         }
 
-        healthState = .checking
+        let previousHealth = healthState
+        if previousHealth != .healthy {
+            healthState = .checking
+        }
         let isAlive = await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: credentials)
         guard status == .running else {
             return
@@ -263,7 +279,7 @@ final class LocalProxyController: ObservableObject {
 
         if isAlive {
             healthState = .healthy
-            appendLog(.success, "Foreground check: tunnel CONNECT passed")
+            logForegroundSuccessIfNeeded(previousHealth: previousHealth)
         } else {
             enterExternalTunnelRecovery("Foreground check failed")
         }
@@ -275,7 +291,9 @@ final class LocalProxyController: ObservableObject {
         }
 
         let previousHealth = healthState
-        healthState = .checking
+        if previousHealth != .healthy {
+            healthState = .checking
+        }
         let isAlive = await OlcRTCEngine.checkTunnelConnectivity(port: socksPort, credentials: credentials)
 
         guard status == .running else {
@@ -286,7 +304,7 @@ final class LocalProxyController: ObservableObject {
             consecutiveHealthFailures = 0
             healthState = .healthy
             if previousHealth != .healthy {
-                appendLog(.success, "Watchdog: tunnel CONNECT passed")
+                appendLog(.success, "Watchdog: tunnel CONNECT restored")
             }
             return
         }
@@ -308,15 +326,31 @@ final class LocalProxyController: ObservableObject {
         }
     }
 
+    private func logForegroundSuccessIfNeeded(previousHealth: HealthState) {
+        let now = Date()
+        let shouldLog = previousHealth != .healthy
+            || lastForegroundSuccessLogDate == nil
+            || now.timeIntervalSince(lastForegroundSuccessLogDate ?? .distantPast) > 120
+
+        guard shouldLog else {
+            return
+        }
+
+        lastForegroundSuccessLogDate = now
+        appendLog(.success, "Foreground check: tunnel CONNECT passed")
+    }
+
     private func enterExternalTunnelRecovery(_ reason: String) {
         reconnectTask?.cancel()
         reconnectTask = nil
+        foregroundCheckTask?.cancel()
+        foregroundCheckTask = nil
         stopWatchdog()
         stopEngineInBackground()
         healthState = .unhealthy
         consecutiveHealthFailures = 0
         status = .needsTunnelRestart
-        lastMessage = "Сеть изменилась. Выключи туннель во внешнем VPN-клиенте, нажми Restart SOCKS, затем включи туннель обратно."
+        lastMessage = "Сеть изменилась. Выключи туннель во внешнем VPN-клиенте, нажми «Перезапустить», затем включи туннель обратно."
         appendLog(.warning, "\(reason). Local SOCKS stopped; external VPN tunnel restart is required.")
     }
 

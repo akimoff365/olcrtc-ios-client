@@ -71,7 +71,7 @@ struct ContentView: View {
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("OlcRTC")
+            .navigationTitle("Gateway")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
@@ -182,7 +182,7 @@ private struct ConnectionPanel: View {
     let canStop: Bool
 
     var body: some View {
-        Panel(title: "Gateway", systemImage: status.symbolName) {
+        Panel(title: "Подключение", systemImage: status.symbolName) {
             VStack(spacing: 16) {
                 HStack(spacing: 10) {
                     StatusBadge(status: status)
@@ -192,8 +192,15 @@ private struct ConnectionPanel: View {
 
                 ZStack {
                     Circle()
-                        .fill(status.tint.opacity(0.12))
-                        .frame(width: 124, height: 124)
+                        .fill(
+                            RadialGradient(
+                                colors: [status.tint.opacity(0.18), status.tint.opacity(0.04)],
+                                center: .center,
+                                startRadius: 4,
+                                endRadius: 72
+                            )
+                        )
+                        .frame(width: 132, height: 132)
                     Circle()
                         .stroke(status.tint.opacity(0.28), lineWidth: 2)
                         .frame(width: 94, height: 94)
@@ -206,6 +213,7 @@ private struct ConnectionPanel: View {
                 VStack(spacing: 5) {
                     Text(status.rawValue)
                         .font(.title2.weight(.bold))
+                        .foregroundStyle(status.tint)
                     Text(activeProfile?.displayName ?? "Выбери профиль ниже")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -221,10 +229,11 @@ private struct ConnectionPanel: View {
 
                 HStack(spacing: 10) {
                     Button(action: restart) {
-                        Label("Restart SOCKS", systemImage: "arrow.clockwise")
+                        Label("Перезапустить", systemImage: "arrow.clockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(status.tint)
                     .controlSize(.large)
                     .disabled(!canRestart)
 
@@ -238,8 +247,8 @@ private struct ConnectionPanel: View {
                 }
 
                 HStack(spacing: 10) {
-                    MetricView(title: "Health", value: healthState.rawValue)
-                    MetricView(title: "Restarts", value: "\(reconnectCount)")
+                    MetricView(title: "Маршрут", value: healthState.rawValue)
+                    MetricView(title: "Рестарты", value: "\(reconnectCount)")
                     MetricView(title: "Auth", value: "On")
                 }
 
@@ -272,7 +281,7 @@ private struct AppHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("OlcRTC Gateway")
                     .font(.title3.weight(.bold))
-                Text("Local SOCKS bridge for external VPN clients")
+                Text("Локальный SOCKS-мост для внешнего VPN-клиента")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -293,7 +302,7 @@ private struct ImportPanel: View {
     let submit: () -> Void
 
     var body: some View {
-        Panel(title: "Импорт", systemImage: "link.badge.plus") {
+        Panel(title: "Импорт профиля", systemImage: "link.badge.plus") {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("olcrtc://...", text: $importText, axis: .vertical)
                     .textInputAutocapitalization(.never)
@@ -317,12 +326,12 @@ private struct ImportPanel: View {
 
                 HStack(spacing: 10) {
                     Button(action: paste) {
-                        Label("Paste", systemImage: "doc.on.clipboard")
+                        Label("Вставить", systemImage: "doc.on.clipboard")
                     }
                     .buttonStyle(.bordered)
 
                     Button(action: submit) {
-                        Label("Import", systemImage: "square.and.arrow.down")
+                        Label("Импорт", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -461,12 +470,14 @@ private struct ProxyPanel: View {
 
                 HStack(spacing: 10) {
                     Button(action: copySocksLink) {
-                        Label(copied == .socks ? "Copied" : "socks://", systemImage: copied == .socks ? "checkmark" : "link")
+                        Label(copied == .socks ? "Скопировано" : "socks://", systemImage: copied == .socks ? "checkmark" : "link")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
 
                     Button(action: copySocks5Link) {
-                        Label(copied == .socks5 ? "Copied" : "socks5://", systemImage: copied == .socks5 ? "checkmark" : "link")
+                        Label(copied == .socks5 ? "Скопировано" : "socks5://", systemImage: copied == .socks5 ? "checkmark" : "link")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
@@ -476,7 +487,7 @@ private struct ProxyPanel: View {
                 }
                 .buttonStyle(.bordered)
 
-                Text("Сначала запускается OlcRTC, потом импортируй socks:// или socks5:// ссылку во внешний VPN-клиент. Если сеть сменилась, выключи туннель во внешнем клиенте, нажми Restart SOCKS и включи его обратно.")
+                Text("Сначала запусти профиль здесь, затем включи SOCKS-профиль во внешнем клиенте. После смены сети выключи внешний туннель, перезапусти SOCKS и включи туннель снова.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -561,6 +572,7 @@ private struct Panel<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 4)
     }
 }
 
