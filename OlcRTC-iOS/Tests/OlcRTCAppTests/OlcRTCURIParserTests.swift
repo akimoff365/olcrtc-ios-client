@@ -52,6 +52,10 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.startAttemptCount, 2)
         XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 90_000)
         XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 20_000_000_000)
+
+        let runtimeClientID = profile.runtimeClientID()
+        XCTAssertTrue(runtimeClientID.hasPrefix("iphone-01-r"))
+        XCTAssertNotEqual(runtimeClientID, profile.clientID)
     }
 
     func testParsesPercentEncodedJitsiRoomURL() throws {
@@ -75,6 +79,7 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.startAttemptCount, 3)
         XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 12_000)
         XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 12_000_000_000)
+        XCTAssertEqual(profile.runtimeClientID(), "iphone-01")
     }
 
     func testRejectsNonHexKey() {

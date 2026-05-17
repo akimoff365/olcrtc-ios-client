@@ -94,6 +94,18 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
         isJitsiDatachannel ? 20_000_000_000 : 12_000_000_000
     }
 
+    func runtimeClientID() -> String {
+        guard isJitsiDatachannel else {
+            return clientID
+        }
+
+        let suffix = UUID().uuidString
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(8)
+            .lowercased()
+        return "\(clientID)-r\(suffix)"
+    }
+
     var roomLabel: String {
         if carrier.lowercased() == "jitsi",
            let host = URL(string: roomID).flatMap(\.host) {

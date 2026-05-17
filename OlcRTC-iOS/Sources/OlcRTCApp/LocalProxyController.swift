@@ -108,6 +108,7 @@ final class LocalProxyController: ObservableObject {
                 if startResult.port != requestedPort {
                     appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
                 }
+                appendRuntimeClientIDIfNeeded(startResult.runtimeClientID, profile: profile)
 
                 guard await OlcRTCEngine.checkTunnelConnectivity(
                     port: startResult.port,
@@ -280,6 +281,7 @@ final class LocalProxyController: ObservableObject {
             if startResult.port != requestedPort {
                 appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
             }
+            appendRuntimeClientIDIfNeeded(startResult.runtimeClientID, profile: profile)
 
             guard await OlcRTCEngine.checkTunnelConnectivity(
                 port: startResult.port,
@@ -468,6 +470,7 @@ final class LocalProxyController: ObservableObject {
                 if startResult.port != requestedPort {
                     appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
                 }
+                appendRuntimeClientIDIfNeeded(startResult.runtimeClientID, profile: profile)
 
                 guard await OlcRTCEngine.checkTunnelConnectivity(
                     port: startResult.port,
@@ -701,6 +704,14 @@ final class LocalProxyController: ObservableObject {
         appendLog(.warning, "\(reason). Local SOCKS stopped; external VPN tunnel restart is required.")
     }
 
+    private func appendRuntimeClientIDIfNeeded(_ runtimeClientID: String, profile: OlcRTCProfile) {
+        guard runtimeClientID != profile.clientID else {
+            return
+        }
+
+        appendLog(.info, "Runtime client id: \(runtimeClientID)")
+    }
+
     private func stopEngineInBackground() {
         Task.detached(priority: .utility) {
             OlcRTCEngine.stop()
@@ -780,15 +791,17 @@ private struct NetworkPathSnapshot {
 private struct EngineStartResult: Sendable {
     let port: Int
     let credentials: SocksCredentials
+    let runtimeClientID: String
 }
 
 private func startEngine(profile: OlcRTCProfile, requestedPort: Int, stopDelay: TimeInterval) throws -> EngineStartResult {
     let credentials = SocksCredentials.load()
+    let runtimeClientID = profile.runtimeClientID()
     OlcRTCEngine.stop()
     Thread.sleep(forTimeInterval: stopDelay)
     let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
-    try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
-    return EngineStartResult(port: port, credentials: credentials)
+    try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials, runtimeClientID: runtimeClientID)
+    return EngineStartResult(port: port, credentials: credentials, runtimeClientID: runtimeClientID)
 }
 
 private enum ControllerError: LocalizedError {
