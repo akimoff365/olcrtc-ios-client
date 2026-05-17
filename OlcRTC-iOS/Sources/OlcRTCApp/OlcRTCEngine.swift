@@ -56,7 +56,7 @@ enum OlcRTCEngine {
         #endif
     }
 
-    static func checkLocalSocks(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 3_000_000_000) async -> Bool {
+    static func checkLocalSocks(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 5_000_000_000) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 await Self.socksAuthHandshake(port: port, credentials: credentials)
@@ -72,24 +72,30 @@ enum OlcRTCEngine {
         }
     }
 
-    static func checkTunnelConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 8_000_000_000) async -> Bool {
+    static func checkTunnelConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 12_000_000_000) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                for target in SocksConnectTarget.defaults {
-                    if await Self.socksConnectProbe(port: port, credentials: credentials, target: target) {
-                        return true
-                    }
-                }
-                return false
-            }
+            // Add timeout task
             group.addTask {
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 return false
             }
-
-            let result = await group.next() ?? false
-            group.cancelAll()
-            return result
+            
+            // Add parallel probe tasks for each target
+            for target in SocksConnectTarget.defaults {
+                group.addTask {
+                    await Self.socksConnectProbe(port: port, credentials: credentials, target: target)
+                }
+            }
+            
+            // Return on first success
+            for await result in group {
+                if result {
+                    group.cancelAll()
+                    return true
+                }
+            }
+            
+            return false
         }
     }
 
@@ -229,8 +235,8 @@ enum OlcRTCEngine {
         }.value
     }
 
-    private static func setSocketTimeouts(_ descriptor: Int32) {
-        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+    private static func setSocketTimeouts(_ descriptor: Int32, seconds: Int = 3) {
+        var timeout = timeval(tv_sec: seconds, tv_usec: 0)
         withUnsafePointer(to: &timeout) { pointer in
             _ = setsockopt(
                 descriptor,
