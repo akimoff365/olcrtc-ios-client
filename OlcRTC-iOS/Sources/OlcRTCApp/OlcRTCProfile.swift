@@ -33,6 +33,59 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
         comment.isEmpty ? "\(carrier) \(transport)" : comment
     }
 
+    var carrierDisplayName: String {
+        switch carrier.lowercased() {
+        case "jitsi":
+            return "Jitsi"
+        case "telemost":
+            return "Telemost"
+        case "wbstream":
+            return "WB Stream"
+        case "jazz":
+            return "Jazz"
+        default:
+            return carrier
+        }
+    }
+
+    var transportDisplayName: String {
+        switch transport.lowercased() {
+        case "datachannel":
+            return "Data"
+        case "vp8channel":
+            return "VP8"
+        case "seichannel":
+            return "SEI"
+        case "videochannel":
+            return "Video"
+        default:
+            return transport
+        }
+    }
+
+    var compatibilityLabel: String {
+        switch (carrier.lowercased(), transport.lowercased()) {
+        case ("jitsi", "datachannel"):
+            return "stable"
+        case ("jitsi", _):
+            return "best effort"
+        case ("telemost", "vp8channel"):
+            return "stable"
+        case ("wbstream", "vp8channel"), ("wbstream", "seichannel"), ("wbstream", "videochannel"):
+            return "stable"
+        default:
+            return "custom"
+        }
+    }
+
+    var roomLabel: String {
+        if carrier.lowercased() == "jitsi",
+           let host = URL(string: roomID).flatMap(\.host) {
+            return host
+        }
+        return roomID
+    }
+
     func renamed(_ name: String) -> OlcRTCProfile {
         OlcRTCProfile(
             carrier: carrier,

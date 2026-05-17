@@ -8,6 +8,7 @@
 - Обертку над Go Mobile API `olcrtc/mobile`.
 - Хранение SOCKS-секретов и ключей профилей в Keychain.
 - Авто-подбор свободного SOCKS-порта.
+- Поддержку актуального `jitsi` carrier из ветки `refactor/universal-carrier`.
 - XcodeGen-конфиг, чтобы быстро собрать проект на macOS.
 - GitHub Actions workflow для сборки на macOS runner.
 
@@ -94,6 +95,20 @@ OlcRTCClient-unsigned.ipa
 ```
 
 Этот файл можно подписывать через ESign. Без подписи iPhone его не установит.
+
+## Jitsi
+
+Для Jitsi используется carrier `jitsi` и transport `datachannel`. В поле room
+передается полный URL комнаты:
+
+```text
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745%iphone-01$Jitsi data
+```
+
+Скрипт `Scripts/build-mobile-xcframework.sh` по умолчанию собирает
+`openlibrecommunity/olcrtc` из ветки `refactor/universal-carrier`, где этот
+carrier уже есть. При необходимости ветку можно переопределить переменной
+`OLCRTC_REF`.
 
 ## Проверочная ссылка
 

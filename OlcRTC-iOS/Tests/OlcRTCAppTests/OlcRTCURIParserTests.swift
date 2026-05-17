@@ -35,6 +35,33 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.comment, "CH data")
     }
 
+    func testParsesJitsiRoomURL() throws {
+        let key = String(repeating: "a", count: 64)
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#\(key)%iphone-01$Jitsi data"
+        )
+
+        XCTAssertEqual(profile.carrier, "jitsi")
+        XCTAssertEqual(profile.transport, "datachannel")
+        XCTAssertEqual(profile.roomID, "https://meet.cryptopro.ru/myroom")
+        XCTAssertEqual(profile.carrierDisplayName, "Jitsi")
+        XCTAssertEqual(profile.transportDisplayName, "Data")
+        XCTAssertEqual(profile.compatibilityLabel, "stable")
+        XCTAssertEqual(profile.roomLabel, "meet.cryptopro.ru")
+    }
+
+    func testParsesPercentEncodedJitsiRoomURL() throws {
+        let key = String(repeating: "b", count: 64)
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://jitsi?datachannel@https%3A%2F%2Fmeet.jit.si%2Fpasklove-room#\(key)%iphone-02$Jitsi%20public"
+        )
+
+        XCTAssertEqual(profile.roomID, "https://meet.jit.si/pasklove-room")
+        XCTAssertEqual(profile.clientID, "iphone-02")
+        XCTAssertEqual(profile.comment, "Jitsi public")
+        XCTAssertEqual(profile.roomLabel, "meet.jit.si")
+    }
+
     func testRejectsNonHexKey() {
         XCTAssertThrowsError(
             try OlcRTCProfile(

@@ -17,6 +17,7 @@ SOCKS5-прокси на iPhone, а внешний VPN-клиент подклю
 - проверка не только открытого порта, а реального SOCKS `CONNECT`;
 - watchdog, диагностика и копирование лога;
 - silent audio keep-alive для более стабильной работы в фоне;
+- поддержка `jitsi`, `telemost`, `wbstream` и `jazz` из актуальной ветки `olcrtc`;
 - unsigned IPA сборка через GitHub Actions для подписи через ESign.
 
 ## Важное ограничение
@@ -46,6 +47,17 @@ SOCKS5-прокси на iPhone, а внешний VPN-клиент подклю
 
 Если порт занят, приложение выберет следующий свободный и покажет новый порт в
 карточке локального прокси.
+
+## Jitsi
+
+Сборка Mobile framework закреплена на ветке
+`openlibrecommunity/olcrtc@refactor/universal-carrier`, где добавлен carrier
+`jitsi`. Для Jitsi используем `datachannel`, а в `room` передаём полный URL
+комнаты:
+
+```text
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>%iphone-01$Jitsi data
+```
 
 ## Структура
 

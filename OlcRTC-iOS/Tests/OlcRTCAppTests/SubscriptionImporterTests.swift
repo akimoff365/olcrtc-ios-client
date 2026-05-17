@@ -11,15 +11,21 @@ final class SubscriptionImporterTests: XCTestCase {
 
         olcrtc://telemost?vp8channel<vp8-fps=60&vp8-batch=8>@room-02#\(key)%iphone-02$Second
         ##comment: CH exit
+
+        olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/team-room#\(key)%iphone-03$Third
+        ##name: Jitsi stable
         """
 
         let result = try SubscriptionImporter.parseSubscription(content)
 
         XCTAssertEqual(result.title, "Mobile nodes")
-        XCTAssertEqual(result.profiles.count, 2)
+        XCTAssertEqual(result.profiles.count, 3)
         XCTAssertEqual(result.profiles[0].displayName, "RU bridge")
         XCTAssertEqual(result.profiles[1].displayName, "CH exit")
         XCTAssertEqual(result.profiles[1].payload["vp8-batch"], "8")
+        XCTAssertEqual(result.profiles[2].carrier, "jitsi")
+        XCTAssertEqual(result.profiles[2].roomID, "https://meet.cryptopro.ru/team-room")
+        XCTAssertEqual(result.profiles[2].displayName, "Jitsi stable")
     }
 
     func testRejectsSubscriptionWithoutProfiles() {

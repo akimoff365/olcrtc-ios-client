@@ -244,7 +244,7 @@ private struct ConnectionPanel: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                     if let activeProfile {
-                        Text("\(activeProfile.carrier) / \(activeProfile.transport)")
+                        Text("\(activeProfile.carrierDisplayName) / \(activeProfile.transportDisplayName)")
                             .font(.caption.monospaced())
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -443,10 +443,11 @@ private struct ProfileRow: View {
                     .font(.headline)
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    MiniPill(text: profile.carrier)
-                    MiniPill(text: profile.transport)
+                    MiniPill(text: profile.carrierDisplayName)
+                    MiniPill(text: profile.transportDisplayName)
+                    MiniPill(text: profile.compatibilityLabel)
                 }
-                Text(profile.clientID)
+                Text("\(profile.roomLabel) / \(profile.clientID)")
                     .font(.caption.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
