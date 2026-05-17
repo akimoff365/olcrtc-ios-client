@@ -99,12 +99,7 @@ final class LocalProxyController: ObservableObject {
             do {
                 let requestedPort = loadPreferredPort()
                 let startResult = try await Task.detached(priority: .userInitiated) {
-                    let credentials = SocksCredentials.load()
-                    OlcRTCEngine.stop()
-                    Thread.sleep(forTimeInterval: 0.35)
-                    let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
-                    try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
-                    return EngineStartResult(port: port, credentials: credentials)
+                    try startEngine(profile: profile, requestedPort: requestedPort, stopDelay: 0.35)
                 }.value
                 try BackgroundKeepAlive.shared.start()
 
@@ -276,12 +271,7 @@ final class LocalProxyController: ObservableObject {
         do {
             let requestedPort = socksPort
             let startResult = try await Task.detached(priority: .userInitiated) {
-                let credentials = SocksCredentials.load()
-                OlcRTCEngine.stop()
-                Thread.sleep(forTimeInterval: 0.9)
-                let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
-                try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
-                return EngineStartResult(port: port, credentials: credentials)
+                try startEngine(profile: profile, requestedPort: requestedPort, stopDelay: 0.9)
             }.value
             try BackgroundKeepAlive.shared.start()
 
@@ -396,6 +386,10 @@ final class LocalProxyController: ObservableObject {
             return
         }
         
+        guard let activeProfile else {
+            return
+        }
+
         appendLog(.warning, "Network change broke the tunnel")
         metrics.recordEvent(.reconnect(reason: "Network change"))
         metrics.save()
@@ -408,7 +402,107 @@ final class LocalProxyController: ObservableObject {
             )
         }
         
-        enterExternalTunnelRecovery("Network changed to \(snapshot.name)")
+        beginAutomaticNetworkRecovery(
+            profile: activeProfile,
+            reason: "Network changed to \(snapshot.name)"
+        )
+    }
+
+    private func beginAutomaticNetworkRecovery(profile: OlcRTCProfile, reason: String) {
+        reconnectTask?.cancel()
+        foregroundCheckTask?.cancel()
+        foregroundCheckTask = nil
+        stopWatchdog()
+        stopEngineInBackground()
+        healthState = .checking
+        consecutiveHealthFailures = 0
+        watchdogIntervalNanoseconds = 45_000_000_000
+        status = .restarting
+        lastMessage = "Сеть изменилась. Пробую восстановить SOCKS автоматически..."
+        appendLog(.warning, "\(reason). Auto recovery started")
+
+        reconnectTask = Task { [profile, reason] in
+            await runAutomaticNetworkRecovery(profile: profile, reason: reason)
+        }
+    }
+
+    private func runAutomaticNetworkRecovery(profile: OlcRTCProfile, reason: String) async {
+        let delays: [UInt64] = [
+            2_000_000_000,
+            6_000_000_000,
+            12_000_000_000,
+            24_000_000_000
+        ]
+
+        for (index, delay) in delays.enumerated() {
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else {
+                return
+            }
+            guard activeProfile?.id == profile.id, status != .stopped else {
+                return
+            }
+
+            if isOperationInProgress {
+                appendLog(.warning, "Network recovery attempt \(index + 1)/\(delays.count) delayed: operation in progress")
+                continue
+            }
+
+            isOperationInProgress = true
+            defer { isOperationInProgress = false }
+
+            status = .restarting
+            healthState = .checking
+            lastMessage = "Восстановление после смены сети: попытка \(index + 1)/\(delays.count)..."
+            appendLog(.info, "Network recovery attempt \(index + 1)/\(delays.count)")
+
+            do {
+                let requestedPort = socksPort
+                let startResult = try await Task.detached(priority: .userInitiated) {
+                    try startEngine(profile: profile, requestedPort: requestedPort, stopDelay: 1.2)
+                }.value
+                try BackgroundKeepAlive.shared.start()
+
+                socksPort = startResult.port
+                credentials = startResult.credentials
+                if startResult.port != requestedPort {
+                    appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
+                }
+
+                guard await OlcRTCEngine.checkTunnelConnectivity(
+                    port: startResult.port,
+                    credentials: startResult.credentials,
+                    timeoutNanoseconds: profile.tunnelCheckTimeoutNanoseconds
+                ) else {
+                    throw ControllerError.tunnelConnectivityFailed
+                }
+
+                saveSuccessfulPort(startResult.port)
+                reconnectCount += 1
+                consecutiveHealthFailures = 0
+                healthState = .healthy
+                status = .running
+                lastMessage = "Маршрут восстановлен после смены сети."
+                readinessState = .checking
+                startPathMonitor()
+                startWatchdog()
+                appendLog(.success, "Network recovery succeeded on attempt \(index + 1)")
+                NotificationManager.shared.send(.connectionRestored)
+
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await checkReadiness()
+                }
+                return
+            } catch {
+                stopEngineInBackground()
+                BackgroundKeepAlive.shared.stop()
+                healthState = .unhealthy
+                appendLog(.warning, "Network recovery attempt \(index + 1)/\(delays.count) failed: \(error.localizedDescription)")
+            }
+        }
+
+        markExternalTunnelRestartRequired("\(reason). Automatic recovery failed")
     }
 
     private func scheduleRestart(profile: OlcRTCProfile, reason: String, delayNanoseconds: UInt64) {
@@ -586,6 +680,10 @@ final class LocalProxyController: ObservableObject {
         foregroundCheckTask = nil
         networkChangeTask?.cancel()
         networkChangeTask = nil
+        markExternalTunnelRestartRequired(reason)
+    }
+
+    private func markExternalTunnelRestartRequired(_ reason: String) {
         stopWatchdog()
         stopEngineInBackground()
         healthState = .unhealthy
@@ -682,6 +780,15 @@ private struct NetworkPathSnapshot {
 private struct EngineStartResult: Sendable {
     let port: Int
     let credentials: SocksCredentials
+}
+
+private func startEngine(profile: OlcRTCProfile, requestedPort: Int, stopDelay: TimeInterval) throws -> EngineStartResult {
+    let credentials = SocksCredentials.load()
+    OlcRTCEngine.stop()
+    Thread.sleep(forTimeInterval: stopDelay)
+    let port = PortAvailability.nextAvailableTCPPort(startingAt: requestedPort)
+    try OlcRTCEngine.start(profile: profile, socksPort: port, credentials: credentials)
+    return EngineStartResult(port: port, credentials: credentials)
 }
 
 private enum ControllerError: LocalizedError {
