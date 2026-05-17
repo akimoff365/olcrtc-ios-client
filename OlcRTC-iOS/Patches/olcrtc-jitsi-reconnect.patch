@@ -1,0 +1,109 @@
+diff --git a/internal/client/client.go b/internal/client/client.go
+index 5a92388..b8f4e25 100644
+--- a/internal/client/client.go
++++ b/internal/client/client.go
+@@ -211,16 +211,8 @@ func (c *Client) bringUpLink(
+ 		return fmt.Errorf("failed to connect link: %w", err)
+ 	}
+ 
+-	c.conn = muxconn.New(ln, c.cipher)
+-	sess, err := smux.Client(c.conn, smuxConfig(linkMaxPayload(ln)))
++	sess, control, sid, err := c.openInitialSession(ctx, ln)
+ 	if err != nil {
+-		return fmt.Errorf("smux client: %w", err)
+-	}
+-
+-	control, sid, err := openControlStream(ctx, sess, c.deviceID, c.claims)
+-	if err != nil {
+-		_ = sess.Close()
+-		_ = c.conn.Close()
+ 		return fmt.Errorf("handshake: %w", err)
+ 	}
+ 	logger.Infof("session %s opened (device=%s)", sid, c.deviceID)
+@@ -237,6 +229,53 @@ func (c *Client) bringUpLink(
+ 	return nil
+ }
+ 
++func (c *Client) openInitialSession(
++	ctx context.Context,
++	ln transport.Transport,
++) (*smux.Session, *smux.Stream, string, error) {
++	const (
++		maxAttempts  = 5
++		attemptDelay = 2 * time.Second
++	)
++
++	var lastErr error
++	for attempt := 1; attempt <= maxAttempts; attempt++ {
++		if attempt > 1 {
++			logger.Infof("initial handshake retry attempt=%d/%d", attempt, maxAttempts)
++		}
++
++		c.conn = muxconn.New(ln, c.cipher)
++		sess, err := smux.Client(c.conn, smuxConfig(linkMaxPayload(ln)))
++		if err != nil {
++			lastErr = fmt.Errorf("smux client: %w", err)
++		} else {
++			control, sid, err := openControlStreamTimeout(ctx, sess, c.deviceID, c.claims, 6*time.Second)
++			if err == nil {
++				return sess, control, sid, nil
++			}
++			lastErr = err
++			logger.Warnf("initial handshake failed (attempt %d/%d): %v", attempt, maxAttempts, err)
++			_ = sess.Close()
++		}
++
++		if c.conn != nil {
++			_ = c.conn.Close()
++		}
++		c.resetLinkPeer()
++
++		select {
++		case <-ctx.Done():
++			return nil, nil, "", ctx.Err()
++		case <-time.After(time.Duration(attempt) * attemptDelay):
++		}
++	}
++
++	if lastErr == nil {
++		lastErr = ErrConnectFailed
++	}
++	return nil, nil, "", lastErr
++}
++
+ // openControlStream opens stream #1 on sess and performs the handshake.
+ // The stream stays open for the lifetime of the smux session and carries
+ // post-handshake control messages.
+@@ -368,8 +407,8 @@ func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context
+ 	// muxconn+smux pair on each attempt so a failed smux.Close doesn't corrupt
+ 	// the byte stream for subsequent attempts.
+ 	const (
+-		maxAttempts  = 5
+-		attemptDelay = 300 * time.Millisecond
++		maxAttempts  = 8
++		attemptDelay = 750 * time.Millisecond
+ 	)
+ 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+ 		logger.Infof("client reconnect attempt=%d reason=%s", attempt, reason)
+@@ -379,7 +418,7 @@ func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context
+ 		select {
+ 		case <-ctx.Done():
+ 			return false
+-		case <-time.After(attemptDelay):
++		case <-time.After(time.Duration(attempt) * attemptDelay):
+ 		}
+ 	}
+ 	logger.Warnf("client reconnect: exhausted %d handshake attempts", maxAttempts)
+@@ -416,10 +455,11 @@ func (c *Client) tryReopenSession(
+ 		logger.Warnf("smux re-init failed (attempt %d): %v", attempt, err)
+ 		return false
+ 	}
+-	control, sid, err := openControlStreamTimeout(ctx, sess, c.deviceID, c.claims, 2*time.Second)
++	control, sid, err := openControlStreamTimeout(ctx, sess, c.deviceID, c.claims, 6*time.Second)
+ 	if err != nil {
+ 		logger.Warnf("handshake on reconnect failed (attempt %d): %v", attempt, err)
+ 		_ = sess.Close()
++		c.resetLinkPeer()
+ 		return false
+ 	}
+ 	logger.Infof("session %s reopened (device=%s)", sid, c.deviceID)

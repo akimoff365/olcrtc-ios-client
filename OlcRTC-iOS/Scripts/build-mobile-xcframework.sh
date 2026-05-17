@@ -15,10 +15,16 @@ else
   git -C "$OLCRTC_DIR" fetch origin "$OLCRTC_REF"
   git -C "$OLCRTC_DIR" checkout "$OLCRTC_REF"
   git -C "$OLCRTC_DIR" pull --ff-only origin "$OLCRTC_REF"
+  git -C "$OLCRTC_DIR" reset --hard "origin/$OLCRTC_REF"
   git -C "$OLCRTC_DIR" submodule update --init --recursive
 fi
 
 pushd "$OLCRTC_DIR" >/dev/null
+for patch_file in "$ROOT_DIR"/Patches/*.patch; do
+  [[ -e "$patch_file" ]] || continue
+  git apply --check "$patch_file"
+  git apply "$patch_file"
+done
 gomobile bind -target=ios -o "$FRAMEWORK_DIR/Mobile.xcframework" ./mobile
 popd >/dev/null
 
