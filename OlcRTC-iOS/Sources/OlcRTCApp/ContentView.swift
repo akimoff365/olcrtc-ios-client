@@ -100,6 +100,8 @@ struct ContentView: View {
                     MetricsPanel(metrics: proxy.metrics, reset: {
                         proxy.resetMetrics()
                     })
+                    
+                    NotificationsPanel()
                 }
                 .padding(16)
             }
@@ -1526,6 +1528,472 @@ private struct DetailRow: View {
             Spacer()
             Text(value)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Notifications Panel
+
+private struct NotificationsPanel: View {
+    @EnvironmentObject private var notifications: NotificationManager
+    @State private var showingSettings = false
+    @AppStorage("notifications.enabled") private var notificationsEnabled = true
+    @AppStorage("notifications.connectionRestored") private var connectionRestored = true
+    @AppStorage("notifications.connectionFailed") private var connectionFailed = true
+    @AppStorage("notifications.networkChanged") private var networkChanged = true
+    @AppStorage("notifications.actionRequired") private var actionRequired = true
+    @AppStorage("notifications.longUptime") private var longUptime = true
+    
+    var body: some View {
+        Panel(title: "Уведомления", systemImage: "bell.fill") {
+            VStack(alignment: .leading, spacing: 14) {
+                // Status
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(statusColor.opacity(0.15))
+                            .frame(width: 50, height: 50)
+                        
+                        Image(systemName: statusIcon)
+                            .font(.title3)
+                            .foregroundStyle(statusColor)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(statusText)
+                            .font(.headline)
+                            .foregroundStyle(statusColor)
+                        
+                        Text(statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                )
+                
+                // Quick toggles
+                if notifications.isAuthorized {
+                    VStack(spacing: 10) {
+                        Toggle(isOn: $notificationsEnabled) {
+                            Label("Включить уведомления", systemImage: "bell.fill")
+                                .font(.subheadline)
+                        }
+                        .tint(.blue)
+                        
+                        if notificationsEnabled {
+                            Divider()
+                            
+                            VStack(spacing: 8) {
+                                NotificationToggle(
+                                    isOn: $connectionRestored,
+                                    title: "Соединение восстановлено",
+                                    icon: "checkmark.circle.fill",
+                                    color: .green
+                                )
+                                
+                                NotificationToggle(
+                                    isOn: $connectionFailed,
+                                    title: "Ошибка подключения",
+                                    icon: "xmark.circle.fill",
+                                    color: .red
+                                )
+                                
+                                NotificationToggle(
+                                    isOn: $networkChanged,
+                                    title: "Сеть изменилась",
+                                    icon: "network",
+                                    color: .orange
+                                )
+                                
+                                NotificationToggle(
+                                    isOn: $actionRequired,
+                                    title: "Требуется действие",
+                                    icon: "exclamationmark.triangle.fill",
+                                    color: .orange
+                                )
+                                
+                                NotificationToggle(
+                                    isOn: $longUptime,
+                                    title: "Долгая работа (6/12/24ч)",
+                                    icon: "star.fill",
+                                    color: .yellow
+                                )
+                            }
+                            .padding(.leading, 8)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                    )
+                }
+                
+                // Actions
+                HStack(spacing: 10) {
+                    if !notifications.isAuthorized {
+                        Button(action: requestPermission) {
+                            Label("Разрешить уведомления", systemImage: "bell.badge")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button(action: { showingSettings = true }) {
+                            Label("Настройки", systemImage: "gear")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button(action: sendTestNotification) {
+                            Label("Тест", systemImage: "paperplane.fill")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            NotificationSettingsView()
+        }
+    }
+    
+    private var statusColor: Color {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return .green
+        case .denied:
+            return .red
+        case .notDetermined:
+            return .orange
+        default:
+            return .secondary
+        }
+    }
+    
+    private var statusIcon: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return "checkmark.circle.fill"
+        case .denied:
+            return "xmark.circle.fill"
+        case .notDetermined:
+            return "questionmark.circle.fill"
+        default:
+            return "bell.slash.fill"
+        }
+    }
+    
+    private var statusText: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return notificationsEnabled ? "Включены" : "Отключены"
+        case .denied:
+            return "Запрещены"
+        case .notDetermined:
+            return "Не настроены"
+        default:
+            return "Недоступны"
+        }
+    }
+    
+    private var statusMessage: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return notificationsEnabled ? "Вы будете получать уведомления о важных событиях" : "Уведомления отключены в настройках приложения"
+        case .denied:
+            return "Разрешите уведомления в Настройках iOS"
+        case .notDetermined:
+            return "Нажмите кнопку ниже для настройки"
+        default:
+            return "Уведомления недоступны"
+        }
+    }
+    
+    private func requestPermission() {
+        Task {
+            _ = await notifications.requestAuthorization()
+        }
+    }
+    
+    private func sendTestNotification() {
+        if notificationsEnabled {
+            notifications.send(.connectionRestored, context: "Это тестовое уведомление")
+        }
+    }
+}
+
+private struct NotificationToggle: View {
+    @Binding var isOn: Bool
+    let title: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                    .frame(width: 20)
+                
+                Text(title)
+                    .font(.caption)
+            }
+        }
+        .tint(color)
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var notifications: NotificationManager
+    @AppStorage("notifications.enabled") private var notificationsEnabled = true
+    @AppStorage("notifications.connectionRestored") private var connectionRestored = true
+    @AppStorage("notifications.connectionFailed") private var connectionFailed = true
+    @AppStorage("notifications.networkChanged") private var networkChanged = true
+    @AppStorage("notifications.actionRequired") private var actionRequired = true
+    @AppStorage("notifications.longUptime") private var longUptime = true
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack {
+                        Image(systemName: statusIcon)
+                            .font(.title)
+                            .foregroundStyle(statusColor)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(statusText)
+                                .font(.headline)
+                            Text(statusMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                if notifications.isAuthorized {
+                    Section {
+                        Toggle("Включить уведомления", isOn: $notificationsEnabled)
+                    } header: {
+                        Text("Основные")
+                    } footer: {
+                        Text("Отключите, чтобы временно не получать уведомления")
+                    }
+                    
+                    if notificationsEnabled {
+                        Section {
+                            Toggle(isOn: $connectionRestored) {
+                                Label("Соединение восстановлено", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
+                            
+                            Toggle(isOn: $connectionFailed) {
+                                Label("Ошибка подключения", systemImage: "xmark.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            
+                            Toggle(isOn: $networkChanged) {
+                                Label("Сеть изменилась", systemImage: "network")
+                                    .foregroundStyle(.orange)
+                            }
+                            
+                            Toggle(isOn: $actionRequired) {
+                                Label("Требуется действие", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                            
+                            Toggle(isOn: $longUptime) {
+                                Label("Долгая работа", systemImage: "star.fill")
+                                    .foregroundStyle(.yellow)
+                            }
+                        } header: {
+                            Text("Типы уведомлений")
+                        } footer: {
+                            Text("Выберите, какие события должны вызывать уведомления")
+                        }
+                        
+                        Section {
+                            Button(action: sendTestNotification) {
+                                Label("Отправить тестовое уведомление", systemImage: "paperplane.fill")
+                            }
+                            
+                            Button(action: clearAll) {
+                                Label("Очистить все уведомления", systemImage: "trash")
+                            }
+                            .foregroundStyle(.red)
+                        } header: {
+                            Text("Действия")
+                        }
+                    }
+                } else {
+                    Section {
+                        Button(action: openSettings) {
+                            Label("Открыть Настройки iOS", systemImage: "gear")
+                        }
+                    } footer: {
+                        Text("Разрешите уведомления в настройках iOS, чтобы получать важные обновления о состоянии подключения")
+                    }
+                }
+                
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        NotificationTypeInfo(
+                            icon: "checkmark.circle.fill",
+                            color: .green,
+                            title: "Соединение восстановлено",
+                            description: "Когда SOCKS прокси снова заработал после сбоя"
+                        )
+                        
+                        Divider()
+                        
+                        NotificationTypeInfo(
+                            icon: "xmark.circle.fill",
+                            color: .red,
+                            title: "Ошибка подключения",
+                            description: "Когда не удалось запустить SOCKS прокси"
+                        )
+                        
+                        Divider()
+                        
+                        NotificationTypeInfo(
+                            icon: "network",
+                            color: .orange,
+                            title: "Сеть изменилась",
+                            description: "Когда произошла смена сети (Wi-Fi ↔ LTE)"
+                        )
+                        
+                        Divider()
+                        
+                        NotificationTypeInfo(
+                            icon: "exclamationmark.triangle.fill",
+                            color: .orange,
+                            title: "Требуется действие",
+                            description: "Когда нужно перезапустить SOCKS и внешний VPN"
+                        )
+                        
+                        Divider()
+                        
+                        NotificationTypeInfo(
+                            icon: "star.fill",
+                            color: .yellow,
+                            title: "Долгая работа",
+                            description: "Поздравление при достижении 6, 12 или 24 часов работы"
+                        )
+                    }
+                } header: {
+                    Text("О типах уведомлений")
+                }
+            }
+            .navigationTitle("Уведомления")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private var statusColor: Color {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return .green
+        case .denied:
+            return .red
+        case .notDetermined:
+            return .orange
+        default:
+            return .secondary
+        }
+    }
+    
+    private var statusIcon: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return "checkmark.circle.fill"
+        case .denied:
+            return "xmark.circle.fill"
+        case .notDetermined:
+            return "questionmark.circle.fill"
+        default:
+            return "bell.slash.fill"
+        }
+    }
+    
+    private var statusText: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return "Разрешены"
+        case .denied:
+            return "Запрещены"
+        case .notDetermined:
+            return "Не настроены"
+        default:
+            return "Недоступны"
+        }
+    }
+    
+    private var statusMessage: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return "Уведомления разрешены в iOS"
+        case .denied:
+            return "Разрешите в Настройках iOS"
+        case .notDetermined:
+            return "Требуется разрешение"
+        default:
+            return "Уведомления недоступны"
+        }
+    }
+    
+    private func sendTestNotification() {
+        notifications.send(.connectionRestored, context: "Это тестовое уведомление")
+    }
+    
+    private func clearAll() {
+        notifications.removeAllDeliveredNotifications()
+    }
+    
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+}
+
+private struct NotificationTypeInfo: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

@@ -49,6 +49,8 @@ final class LocalProxyController: ObservableObject {
     private let portStorageKey = "olcrtc.last.successful.port"
     private var sessionStartTime: Date?
     private var lastNetworkType: String = "Нет"
+    private var uptimeCheckTask: Task<Void, Never>?
+    private var lastUptimeNotificationHours = 0
 
     var canRestart: Bool {
         activeProfile != nil && status != .stopped && status != .starting && status != .restarting
@@ -123,7 +125,13 @@ final class LocalProxyController: ObservableObject {
                 
                 startPathMonitor()
                 startWatchdog()
+                startUptimeMonitor()
                 appendLog(.success, "Tunnel CONNECT passed on 127.0.0.1:\(startResult.port)")
+                
+                // Send notification if app was in background
+                if isInBackground {
+                    NotificationManager.shared.send(.connectionRestored)
+                }
                 
                 // Auto-check readiness
                 Task {
@@ -154,6 +162,12 @@ final class LocalProxyController: ObservableObject {
         // Record metrics
         metrics.recordEvent(.failedStart(reason: lastError?.localizedDescription ?? "unknown"))
         metrics.save()
+        
+        // Send notification
+        NotificationManager.shared.send(
+            .connectionFailed,
+            context: lastError?.localizedDescription ?? "Не удалось запустить после \(maxAttempts) попыток"
+        )
         
         appendLog(.error, "All start attempts failed")
     }
@@ -217,6 +231,8 @@ final class LocalProxyController: ObservableObject {
         foregroundCheckTask = nil
         networkChangeTask?.cancel()
         networkChangeTask = nil
+        uptimeCheckTask?.cancel()
+        uptimeCheckTask = nil
         stopWatchdog()
         stopEngineInBackground()
         BackgroundKeepAlive.shared.stop()
@@ -227,6 +243,7 @@ final class LocalProxyController: ObservableObject {
         consecutiveHealthFailures = 0
         lastPathSignature = nil
         watchdogIntervalNanoseconds = 45_000_000_000
+        lastUptimeNotificationHours = 0
         stopPathMonitor()
         status = .stopped
         lastMessage = nil
@@ -367,6 +384,15 @@ final class LocalProxyController: ObservableObject {
         appendLog(.warning, "Network change broke the tunnel")
         metrics.recordEvent(.reconnect(reason: "Network change"))
         metrics.save()
+        
+        // Send notification if in background
+        if isInBackground {
+            NotificationManager.shared.send(
+                .networkChanged,
+                context: "Сеть изменилась на \(snapshot.name)"
+            )
+        }
+        
         enterExternalTunnelRecovery("Network changed to \(snapshot.name)")
     }
 
@@ -404,6 +430,9 @@ final class LocalProxyController: ObservableObject {
 
     func appDidBecomeActive() {
         isInBackground = false
+        
+        // Clear notifications when app becomes active
+        NotificationManager.shared.clearBadge()
         
         // Restore normal watchdog interval if running
         if status == .running {
@@ -549,12 +578,51 @@ final class LocalProxyController: ObservableObject {
         watchdogIntervalNanoseconds = 45_000_000_000
         status = .needsTunnelRestart
         lastMessage = "Сеть изменилась. Выключи туннель во внешнем VPN-клиенте, нажми «Перезапустить», затем включи туннель обратно."
+        
+        // Send notification
+        NotificationManager.shared.send(
+            .actionRequired,
+            context: "Требуется перезапуск SOCKS и внешнего VPN"
+        )
+        
         appendLog(.warning, "\(reason). Local SOCKS stopped; external VPN tunnel restart is required.")
     }
 
     private func stopEngineInBackground() {
         Task.detached(priority: .utility) {
             OlcRTCEngine.stop()
+        }
+    }
+    
+    private func startUptimeMonitor() {
+        uptimeCheckTask?.cancel()
+        lastUptimeNotificationHours = 0
+        
+        uptimeCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                // Check every hour
+                try? await Task.sleep(nanoseconds: 3_600_000_000_000) // 1 hour
+                
+                guard let self, let startTime = await self.sessionStartTime else {
+                    continue
+                }
+                
+                let uptime = Date().timeIntervalSince(startTime)
+                let hours = Int(uptime / 3600)
+                
+                // Send notifications at 6, 12, 24 hours
+                let milestones = [6, 12, 24]
+                for milestone in milestones {
+                    if hours >= milestone && await self.lastUptimeNotificationHours < milestone {
+                        await MainActor.run {
+                            self.lastUptimeNotificationHours = milestone
+                            NotificationManager.shared.send(.longUptime(hours: milestone))
+                            self.appendLog(.success, "Uptime milestone: \(milestone) hours")
+                        }
+                        break
+                    }
+                }
+            }
         }
     }
 
