@@ -107,7 +107,7 @@ extension NotificationManager {
             case .actionRequired:
                 return "Требуется действие"
             case .longUptime(let hours):
-                return "Отличная работа!"
+                return "Приложение работает без проблем уже \(hours) часов!"
             }
         }
         
@@ -179,8 +179,8 @@ extension NotificationManager {
 
 // MARK: - UNUserNotificationCenterDelegate
 
-extension NotificationManager: UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
+extension NotificationManager: @preconcurrency UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
@@ -189,13 +189,15 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound, .badge])
     }
     
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         // Handle notification tap
-        clearBadge()
+        Task { @MainActor in
+            clearBadge()
+        }
         completionHandler()
     }
 }

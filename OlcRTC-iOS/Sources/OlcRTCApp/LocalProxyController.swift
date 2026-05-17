@@ -612,8 +612,9 @@ final class LocalProxyController: ObservableObject {
                 
                 // Send notifications at 6, 12, 24 hours
                 let milestones = [6, 12, 24]
+                let lastNotified = await self.lastUptimeNotificationHours
                 for milestone in milestones {
-                    if hours >= milestone && await self.lastUptimeNotificationHours < milestone {
+                    if hours >= milestone && lastNotified < milestone {
                         await MainActor.run {
                             self.lastUptimeNotificationHours = milestone
                             NotificationManager.shared.send(.longUptime(hours: milestone))
