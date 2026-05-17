@@ -102,12 +102,12 @@ OlcRTCClient-unsigned.ipa
 передается полный URL комнаты:
 
 ```text
-olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745%iphone-01$Jitsi data
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745$Jitsi data
 ```
 
 Скрипт `Scripts/build-mobile-xcframework.sh` по умолчанию собирает
 `openlibrecommunity/olcrtc` из ветки `refactor/universal-carrier`, где этот
-carrier уже есть. При необходимости ветку можно переопределить переменной
+carrier уже есть. Client ID в ссылке больше не нужен: приложение само создает внутренний технический device_id. Старый формат с %clientID пока принимается только для совместимости. При необходимости ветку можно переопределить переменной
 `OLCRTC_REF`.
 
 ## Проверочная ссылка
@@ -115,7 +115,7 @@ carrier уже есть. При необходимости ветку можно
 Можно вставить такую строку в поле импорта:
 
 ```text
-olcrtc://wbstream?datachannel@019e1c7c-daee-7747-b14b-8a5e7c950da5#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745%device3$olc datachannel device3
+olcrtc://wbstream?datachannel@019e1c7c-daee-7747-b14b-8a5e7c950da5#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745$olc datachannel
 ```
 
 ## Источники
