@@ -32,6 +32,7 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var metrics = ConnectionMetrics.load()
     @Published private(set) var readinessState: ReadinessState = .notReady
     @Published private(set) var readinessChecks: [ReadinessCheck] = []
+    @Published private(set) var profilePingResults: [String: ProfilePingResult] = [:]
 
     private let watchdogInitialDelayNanoseconds: UInt64 = 20_000_000_000
     private var watchdogIntervalNanoseconds: UInt64 = 45_000_000_000
@@ -206,6 +207,85 @@ final class LocalProxyController: ObservableObject {
         readinessState = result.state
         readinessChecks = result.checks
         appendLog(.info, "Readiness check: \(result.state.rawValue)")
+    }
+
+    func pingProfile(_ profile: OlcRTCProfile) async {
+        guard profilePingResults[profile.id]?.state.isChecking != true else {
+            return
+        }
+
+        profilePingResults[profile.id] = ProfilePingResult(state: .checking, checkedAt: Date())
+        appendLog(.info, "Profile ping started: \(profile.displayName)")
+
+        if status != .stopped {
+            guard activeProfile?.id == profile.id, status == .running else {
+                let message = "Останови текущий профиль перед проверкой другого."
+                profilePingResults[profile.id] = ProfilePingResult(state: .failed(message), checkedAt: Date())
+                appendLog(.warning, "Profile ping blocked: another profile is active")
+                return
+            }
+
+            let startedAt = Date()
+            let passed = await OlcRTCEngine.checkGoogleConnectivity(
+                port: socksPort,
+                credentials: credentials,
+                timeoutNanoseconds: profile.tunnelCheckTimeoutNanoseconds
+            )
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if passed {
+                profilePingResults[profile.id] = ProfilePingResult(state: .success(elapsed), checkedAt: Date())
+                appendLog(.success, "Profile ping passed: Google CONNECT in \(String(format: "%.1f", elapsed))s")
+            } else {
+                let message = "Google через текущий SOCKS не отвечает."
+                profilePingResults[profile.id] = ProfilePingResult(state: .failed(message), checkedAt: Date())
+                appendLog(.warning, "Profile ping failed: Google CONNECT did not pass")
+            }
+            return
+        }
+
+        guard !isOperationInProgress else {
+            let message = "Сейчас идет другая операция. Повтори проверку через пару секунд."
+            profilePingResults[profile.id] = ProfilePingResult(state: .failed(message), checkedAt: Date())
+            appendLog(.warning, "Profile ping skipped: operation in progress")
+            return
+        }
+
+        isOperationInProgress = true
+        defer { isOperationInProgress = false }
+
+        do {
+            let requestedPort = loadPreferredPort()
+            let startedAt = Date()
+            let startResult = try await Task.detached(priority: .userInitiated) {
+                try startEngine(profile: profile, requestedPort: requestedPort, stopDelay: 0.35)
+            }.value
+
+            let passed = await OlcRTCEngine.checkGoogleConnectivity(
+                port: startResult.port,
+                credentials: startResult.credentials,
+                timeoutNanoseconds: profile.tunnelCheckTimeoutNanoseconds
+            )
+            await Task.detached(priority: .utility) {
+                OlcRTCEngine.stop()
+            }.value
+
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if passed {
+                profilePingResults[profile.id] = ProfilePingResult(state: .success(elapsed), checkedAt: Date())
+                saveSuccessfulPort(startResult.port)
+                appendLog(.success, "Profile ping passed: \(profile.displayName) -> Google in \(String(format: "%.1f", elapsed))s")
+            } else {
+                let message = "Профиль поднялся, но Google через туннель не отвечает."
+                profilePingResults[profile.id] = ProfilePingResult(state: .failed(message), checkedAt: Date())
+                appendLog(.warning, "Profile ping failed: Google CONNECT did not pass")
+            }
+        } catch {
+            await Task.detached(priority: .utility) {
+                OlcRTCEngine.stop()
+            }.value
+            profilePingResults[profile.id] = ProfilePingResult(state: .failed(error.localizedDescription), checkedAt: Date())
+            appendLog(.error, "Profile ping failed: \(error.localizedDescription)")
+        }
     }
 
     func stop() {

@@ -78,28 +78,48 @@ enum OlcRTCEngine {
     }
 
     static func checkTunnelConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 12_000_000_000) async -> Bool {
+        await checkTunnelConnectivity(
+            port: port,
+            credentials: credentials,
+            targets: SocksConnectTarget.defaults,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+    }
+
+    static func checkGoogleConnectivity(port: Int, credentials: SocksCredentials, timeoutNanoseconds: UInt64 = 12_000_000_000) async -> Bool {
+        await checkTunnelConnectivity(
+            port: port,
+            credentials: credentials,
+            targets: [.google],
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+    }
+
+    private static func checkTunnelConnectivity(
+        port: Int,
+        credentials: SocksCredentials,
+        targets: [SocksConnectTarget],
+        timeoutNanoseconds: UInt64
+    ) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
-            // Add timeout task
             group.addTask {
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 return false
             }
-            
-            // Add parallel probe tasks for each target
-            for target in SocksConnectTarget.defaults {
+
+            for target in targets {
                 group.addTask {
                     await Self.socksConnectProbe(port: port, credentials: credentials, target: target)
                 }
             }
-            
-            // Return on first success
+
             for await result in group {
                 if result {
                     group.cancelAll()
                     return true
                 }
             }
-            
+
             return false
         }
     }
@@ -326,7 +346,10 @@ private struct SocksConnectTarget: Sendable {
     let address: Address
     let port: UInt16
 
+    static let google = SocksConnectTarget(address: .domain("www.google.com"), port: 443)
+
     static let defaults = [
+        google,
         SocksConnectTarget(address: .ipv4("1.1.1.1"), port: 443),
         SocksConnectTarget(address: .ipv4("8.8.8.8"), port: 443),
         SocksConnectTarget(address: .domain("www.apple.com"), port: 443)

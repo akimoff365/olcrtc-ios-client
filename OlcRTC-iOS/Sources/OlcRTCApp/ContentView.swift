@@ -68,11 +68,18 @@ struct ContentView: View {
                     ProfilesPanel(
                         profiles: store.profiles,
                         activeProfile: proxy.activeProfile,
-                        isBusy: proxy.status == .starting || proxy.status == .restarting,
+                        pingResults: proxy.profilePingResults,
+                        isBusy: proxy.status == .starting || proxy.status == .restarting || proxy.isOperationInProgress,
                         connect: { profile in
                             hapticFeedback(.medium)
                             Task {
                                 await proxy.start(profile: profile)
+                            }
+                        },
+                        ping: { profile in
+                            hapticFeedback(.light)
+                            Task {
+                                await proxy.pingProfile(profile)
                             }
                         },
                         remove: { profile in
@@ -579,8 +586,10 @@ private struct ImportPanel: View {
 private struct ProfilesPanel: View {
     let profiles: [OlcRTCProfile]
     let activeProfile: OlcRTCProfile?
+    let pingResults: [String: ProfilePingResult]
     let isBusy: Bool
     let connect: (OlcRTCProfile) -> Void
+    let ping: (OlcRTCProfile) -> Void
     let remove: (OlcRTCProfile) -> Void
 
     var body: some View {
@@ -602,8 +611,10 @@ private struct ProfilesPanel: View {
                         ProfileRow(
                             profile: profile,
                             isActive: activeProfile?.id == profile.id,
+                            pingResult: pingResults[profile.id] ?? .idle,
                             isBusy: isBusy,
                             connect: { connect(profile) },
+                            ping: { ping(profile) },
                             remove: { remove(profile) }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -636,54 +647,83 @@ private struct ProfilesPanel: View {
 private struct ProfileRow: View {
     let profile: OlcRTCProfile
     let isActive: Bool
+    let pingResult: ProfilePingResult
     let isBusy: Bool
     let connect: () -> Void
+    let ping: () -> Void
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(isActive ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
-                    .frame(width: 36, height: 36)
-                
-                Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(
-                        isActive ? 
-                        LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .top, endPoint: .bottom) :
-                        LinearGradient(colors: [.secondary], startPoint: .top, endPoint: .bottom)
-                    )
-                    .symbolEffect(.bounce, value: isActive)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(isActive ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
+                        .frame(width: 36, height: 36)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(profile.displayName)
-                    .font(.headline)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    MiniPill(text: profile.carrierDisplayName)
-                    MiniPill(text: profile.transportDisplayName)
-                    MiniPill(text: profile.compatibilityLabel)
+                    Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(
+                            isActive ?
+                            LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .top, endPoint: .bottom) :
+                            LinearGradient(colors: [.secondary], startPoint: .top, endPoint: .bottom)
+                        )
+                        .symbolEffect(.bounce, value: isActive)
                 }
-                Text(profile.roomLabel)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(profile.displayName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        MiniPill(text: profile.carrierDisplayName)
+                        MiniPill(text: profile.transportDisplayName)
+                        MiniPill(text: profile.compatibilityLabel)
+                    }
+                    Text(profile.roomLabel)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Button(action: ping) {
+                    Image(systemName: pingIcon)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy || pingResult.state.isChecking)
+                .symbolEffect(.pulse, options: .repeating, value: pingResult.state.isChecking)
+
+                Button(action: connect) {
+                    Image(systemName: "power")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy || pingResult.state.isChecking)
+
+                Button(role: .destructive, action: remove) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
             }
 
-            Spacer(minLength: 8)
-
-            Button(action: connect) {
-                Image(systemName: "power")
+            if let pingMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: pingIcon)
+                        .foregroundStyle(pingColor)
+                    Text(pingMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(pingColor.opacity(0.10))
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy)
-
-            Button(role: .destructive, action: remove) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.bordered)
         }
         .padding(12)
         .background(
@@ -696,6 +736,45 @@ private struct ProfileRow: View {
                 .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1.5)
         )
         .animation(.spring(response: 0.3), value: isActive)
+    }
+
+    private var pingIcon: String {
+        switch pingResult.state {
+        case .idle:
+            return "dot.radiowaves.left.and.right"
+        case .checking:
+            return "hourglass"
+        case .success:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "xmark.circle.fill"
+        }
+    }
+
+    private var pingColor: Color {
+        switch pingResult.state {
+        case .idle:
+            return .secondary
+        case .checking:
+            return .orange
+        case .success:
+            return .green
+        case .failed:
+            return .red
+        }
+    }
+
+    private var pingMessage: String? {
+        switch pingResult.state {
+        case .idle:
+            return nil
+        case .checking:
+            return "Проверяю профиль до Google..."
+        case let .success(elapsed):
+            return "Google доступен через профиль за \(String(format: "%.1f", elapsed)) с"
+        case let .failed(message):
+            return message
+        }
     }
 }
 
