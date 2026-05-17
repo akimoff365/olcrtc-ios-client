@@ -666,7 +666,7 @@ private struct ProfileRow: View {
                     MiniPill(text: profile.transportDisplayName)
                     MiniPill(text: profile.compatibilityLabel)
                 }
-                Text("\(profile.roomLabel) / \(profile.clientID)")
+                Text(profile.roomLabel)
                     .font(.caption.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)

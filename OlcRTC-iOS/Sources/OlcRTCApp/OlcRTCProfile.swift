@@ -1,7 +1,7 @@
 import Foundation
 
 struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
-    var id: String { "\(carrier)|\(transport)|\(roomID)|\(clientID)" }
+    var id: String { "\(carrier)|\(transport)|\(roomID)|\(keyHex)|\(clientID)" }
 
     let carrier: String
     let transport: String
@@ -10,6 +10,10 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
     let keyHex: String
     let clientID: String
     let comment: String
+
+    var hasGeneratedClientID: Bool {
+        clientID.hasPrefix("ios-")
+    }
 
     init(
         carrier: String,
@@ -162,10 +166,6 @@ extension OlcRTCProfile {
         }
         let keyHex = splitClient.left
 
-        guard let clientID = splitClient.right, !clientID.isEmpty else {
-            throw ParseError.missingClientID
-        }
-
         let splitRoom = splitKey.left.splitOnce(separator: "@")
         guard let roomID = splitRoom.right, !roomID.isEmpty else {
             throw ParseError.missingRoomID
@@ -181,14 +181,31 @@ extension OlcRTCProfile {
             throw ParseError.missingCarrier
         }
 
+        let clientID = splitClient.right.flatMap { value -> String? in
+            let decoded = value.percentDecoded
+            return decoded.isEmpty ? nil : decoded
+        } ?? Self.generatedClientID(
+            carrier: carrier.percentDecoded,
+            roomID: roomID.percentDecoded,
+            keyHex: keyHex
+        )
+
         let parsedTransport = Self.parseTransport(transportPart)
         self.carrier = carrier.percentDecoded
         self.transport = parsedTransport.name
         self.payload = parsedTransport.payload
         self.roomID = roomID.percentDecoded
         self.keyHex = keyHex
-        self.clientID = clientID.percentDecoded
+        self.clientID = clientID
         self.comment = comment.percentDecoded
+    }
+
+    private static func generatedClientID(carrier: String, roomID: String, keyHex: String) -> String {
+        let seed = "\(carrier)|\(roomID)|\(keyHex)"
+        let hash = seed.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { result, byte in
+            (result ^ UInt64(byte)).multipliedReportingOverflow(by: 1_099_511_628_211).partialValue
+        }
+        return "ios-\(String(hash, radix: 16))"
     }
 
     private static func parseTransport(_ value: String) -> (name: String, payload: [String: String]) {
@@ -218,7 +235,6 @@ extension OlcRTCProfile {
         case missingTransport
         case missingRoomID
         case invalidKey
-        case missingClientID
 
         var errorDescription: String? {
             switch self {
@@ -232,8 +248,6 @@ extension OlcRTCProfile {
                 return "Room ID is missing"
             case .invalidKey:
                 return "Encryption key must be 64 hex characters"
-            case .missingClientID:
-                return "Client ID is missing"
             }
         }
     }

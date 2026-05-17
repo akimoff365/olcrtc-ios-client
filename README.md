@@ -56,8 +56,11 @@ SOCKS5-прокси на iPhone, а внешний VPN-клиент подклю
 комнаты:
 
 ```text
-olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>%iphone-01$Jitsi data
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>$Jitsi data
 ```
+
+Новый URI-формат upstream не содержит `client-id`. Приложение генерирует
+технический `device_id` само и передаёт его только в mobile API `olcrtc`.
 
 ## Структура
 

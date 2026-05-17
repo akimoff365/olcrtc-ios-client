@@ -6,13 +6,13 @@ final class SubscriptionImporterTests: XCTestCase {
         let key = String(repeating: "a", count: 64)
         let content = """
         #name: Mobile nodes
-        olcrtc://wbstream?datachannel@room-01#\(key)%iphone-01$Old name
+        olcrtc://wbstream?datachannel@room-01#\(key)$Old name
         ##name: RU bridge
 
-        olcrtc://telemost?vp8channel<vp8-fps=60&vp8-batch=8>@room-02#\(key)%iphone-02$Second
+        olcrtc://telemost?vp8channel<vp8-fps=60&vp8-batch=8>@room-02#\(key)$Second
         ##comment: CH exit
 
-        olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/team-room#\(key)%iphone-03$Third
+        olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/team-room#\(key)$Third
         ##name: Jitsi stable
         """
 
