@@ -61,6 +61,9 @@ olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>$Jitsi d
 
 Новый URI-формат upstream не содержит `client-id`. Приложение генерирует
 технический `device_id` само и передаёт его только в mobile API `olcrtc`.
+Этот `device_id` привязан к конкретной установке приложения, поэтому одну и ту
+же ссылку можно давать разным людям: на разных iPhone внутренние идентификаторы
+будут разными.
 
 ## Структура
 

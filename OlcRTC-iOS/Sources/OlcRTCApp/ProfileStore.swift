@@ -49,8 +49,25 @@ final class ProfileStore: ObservableObject {
         }
 
         let decodedProfiles = (try? JSONDecoder().decode([OlcRTCProfile].self, from: data)) ?? []
+        var didMigrate = false
         profiles = decodedProfiles.map { profile in
-            profile.withKeyHex(ProfileSecretStore.loadKeyHex(profileID: profile.id) ?? profile.keyHex)
+            let keyHex = ProfileSecretStore.loadKeyHex(profileID: profile.id) ?? profile.keyHex
+            var loadedProfile = profile.withKeyHex(keyHex)
+            if loadedProfile.hasLegacyGeneratedClientID {
+                loadedProfile = loadedProfile.withClientID(
+                    DeviceIdentity.profileClientID(
+                        carrier: loadedProfile.carrier,
+                        roomID: loadedProfile.roomID,
+                        keyHex: loadedProfile.keyHex
+                    )
+                )
+                didMigrate = true
+            }
+            return loadedProfile
+        }
+
+        if didMigrate {
+            save()
         }
     }
 

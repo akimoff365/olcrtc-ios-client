@@ -23,13 +23,21 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.clientID, "iphone-01")
     }
 
-    func testGeneratesStableClientIDForCurrentURIFormat() throws {
+    func testGeneratesStableInstallScopedClientIDForCurrentURIFormat() throws {
         let uri = "olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#\(String(repeating: "a", count: 64))$Jitsi data"
         let first = try OlcRTCProfile(uri: uri)
         let second = try OlcRTCProfile(uri: uri)
 
         XCTAssertTrue(first.clientID.hasPrefix("ios-"))
         XCTAssertEqual(first.clientID, second.clientID)
+        XCTAssertNotEqual(
+            first.clientID,
+            DeviceIdentity.legacyProfileClientID(
+                carrier: first.carrier,
+                roomID: first.roomID,
+                keyHex: first.keyHex
+            )
+        )
     }
 
     func testParsesVP8Payload() throws {

@@ -15,6 +15,10 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
         clientID.hasPrefix("ios-")
     }
 
+    var hasLegacyGeneratedClientID: Bool {
+        clientID == DeviceIdentity.legacyProfileClientID(carrier: carrier, roomID: roomID, keyHex: keyHex)
+    }
+
     init(
         carrier: String,
         transport: String,
@@ -141,6 +145,18 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
             comment: comment
         )
     }
+
+    func withClientID(_ newClientID: String) -> OlcRTCProfile {
+        OlcRTCProfile(
+            carrier: carrier,
+            transport: transport,
+            payload: payload,
+            roomID: roomID,
+            keyHex: keyHex,
+            clientID: newClientID,
+            comment: comment
+        )
+    }
 }
 
 extension OlcRTCProfile {
@@ -184,7 +200,7 @@ extension OlcRTCProfile {
         let clientID = splitClient.right.flatMap { value -> String? in
             let decoded = value.percentDecoded
             return decoded.isEmpty ? nil : decoded
-        } ?? Self.generatedClientID(
+        } ?? DeviceIdentity.profileClientID(
             carrier: carrier.percentDecoded,
             roomID: roomID.percentDecoded,
             keyHex: keyHex
@@ -198,14 +214,6 @@ extension OlcRTCProfile {
         self.keyHex = keyHex
         self.clientID = clientID
         self.comment = comment.percentDecoded
-    }
-
-    private static func generatedClientID(carrier: String, roomID: String, keyHex: String) -> String {
-        let seed = "\(carrier)|\(roomID)|\(keyHex)"
-        let hash = seed.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { result, byte in
-            (result ^ UInt64(byte)).multipliedReportingOverflow(by: 1_099_511_628_211).partialValue
-        }
-        return "ios-\(String(hash, radix: 16))"
     }
 
     private static func parseTransport(_ value: String) -> (name: String, payload: [String: String]) {
