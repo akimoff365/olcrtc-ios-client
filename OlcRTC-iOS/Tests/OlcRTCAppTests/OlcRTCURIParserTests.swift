@@ -48,6 +48,10 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.transportDisplayName, "Data")
         XCTAssertEqual(profile.compatibilityLabel, "stable")
         XCTAssertEqual(profile.roomLabel, "meet.cryptopro.ru")
+        XCTAssertTrue(profile.isJitsiDatachannel)
+        XCTAssertEqual(profile.startAttemptCount, 2)
+        XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 90_000)
+        XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 20_000_000_000)
     }
 
     func testParsesPercentEncodedJitsiRoomURL() throws {
@@ -60,6 +64,17 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.clientID, "iphone-02")
         XCTAssertEqual(profile.comment, "Jitsi public")
         XCTAssertEqual(profile.roomLabel, "meet.jit.si")
+    }
+
+    func testNonJitsiProfilesKeepFastStartupPolicy() throws {
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%iphone-01$CH data"
+        )
+
+        XCTAssertFalse(profile.isJitsiDatachannel)
+        XCTAssertEqual(profile.startAttemptCount, 3)
+        XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 12_000)
+        XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 12_000_000_000)
     }
 
     func testRejectsNonHexKey() {

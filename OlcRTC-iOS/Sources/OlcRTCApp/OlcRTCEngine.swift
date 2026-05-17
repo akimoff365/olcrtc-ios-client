@@ -38,7 +38,7 @@ enum OlcRTCEngine {
         }
 
         var waitError: NSError?
-        let ready = MobileWaitReady(12_000, &waitError)
+        let ready = MobileWaitReady(profile.startReadyTimeoutMilliseconds, &waitError)
         if let waitError {
             throw waitError
         }

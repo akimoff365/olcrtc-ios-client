@@ -83,9 +83,16 @@ final class LocalProxyController: ObservableObject {
         healthState = .checking
         consecutiveHealthFailures = 0
         watchdogIntervalNanoseconds = 45_000_000_000
-        appendLog(.info, "Starting profile: \(profile.displayName)", context: ["network": networkName])
+        appendLog(
+            .info,
+            "Starting profile: \(profile.displayName)",
+            context: [
+                "network": networkName,
+                "readyTimeout": "\(profile.startReadyTimeoutMilliseconds / 1000)s"
+            ]
+        )
 
-        let maxAttempts = 3
+        let maxAttempts = profile.startAttemptCount
         var lastError: Error?
         
         for attempt in 1...maxAttempts {
@@ -107,7 +114,11 @@ final class LocalProxyController: ObservableObject {
                     appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
                 }
 
-                guard await OlcRTCEngine.checkTunnelConnectivity(port: startResult.port, credentials: startResult.credentials) else {
+                guard await OlcRTCEngine.checkTunnelConnectivity(
+                    port: startResult.port,
+                    credentials: startResult.credentials,
+                    timeoutNanoseconds: profile.tunnelCheckTimeoutNanoseconds
+                ) else {
                     throw ControllerError.tunnelConnectivityFailed
                 }
 
@@ -280,7 +291,11 @@ final class LocalProxyController: ObservableObject {
                 appendLog(.warning, "SOCKS port \(requestedPort) was busy; using \(startResult.port)")
             }
 
-            guard await OlcRTCEngine.checkTunnelConnectivity(port: startResult.port, credentials: startResult.credentials) else {
+            guard await OlcRTCEngine.checkTunnelConnectivity(
+                port: startResult.port,
+                credentials: startResult.credentials,
+                timeoutNanoseconds: profile.tunnelCheckTimeoutNanoseconds
+            ) else {
                 throw ControllerError.tunnelConnectivityFailed
             }
 

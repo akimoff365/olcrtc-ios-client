@@ -78,6 +78,22 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
         }
     }
 
+    var isJitsiDatachannel: Bool {
+        carrier.lowercased() == "jitsi" && transport.lowercased() == "datachannel"
+    }
+
+    var startAttemptCount: Int {
+        isJitsiDatachannel ? 2 : 3
+    }
+
+    var startReadyTimeoutMilliseconds: Int {
+        isJitsiDatachannel ? 90_000 : 12_000
+    }
+
+    var tunnelCheckTimeoutNanoseconds: UInt64 {
+        isJitsiDatachannel ? 20_000_000_000 : 12_000_000_000
+    }
+
     var roomLabel: String {
         if carrier.lowercased() == "jitsi",
            let host = URL(string: roomID).flatMap(\.host) {
