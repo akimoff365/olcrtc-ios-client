@@ -29,6 +29,9 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var logs: [ProxyLogEntry] = []
     @Published private(set) var socksPort = 18080
     @Published private(set) var isOperationInProgress = false
+    @Published private(set) var metrics = ConnectionMetrics.load()
+    @Published private(set) var readinessState: ReadinessState = .notReady
+    @Published private(set) var readinessChecks: [ReadinessCheck] = []
 
     private let watchdogInitialDelayNanoseconds: UInt64 = 20_000_000_000
     private var watchdogIntervalNanoseconds: UInt64 = 45_000_000_000
@@ -44,6 +47,8 @@ final class LocalProxyController: ObservableObject {
     private var lastForegroundSuccessLogDate: Date?
     private var isInBackground = false
     private let portStorageKey = "olcrtc.last.successful.port"
+    private var sessionStartTime: Date?
+    private var lastNetworkType: String = "Нет"
 
     var canRestart: Bool {
         activeProfile != nil && status != .stopped && status != .starting && status != .restarting
@@ -110,9 +115,22 @@ final class LocalProxyController: ObservableObject {
                 healthState = .healthy
                 status = .running
                 lastMessage = "Маршрут проверен. Теперь можно включать профиль во внешнем VPN-клиенте."
+                
+                // Record metrics
+                sessionStartTime = Date()
+                metrics.recordEvent(.successfulStart)
+                metrics.save()
+                
                 startPathMonitor()
                 startWatchdog()
                 appendLog(.success, "Tunnel CONNECT passed on 127.0.0.1:\(startResult.port)")
+                
+                // Auto-check readiness
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                    await checkReadiness()
+                }
+                
                 return
             } catch {
                 lastError = error
@@ -132,6 +150,11 @@ final class LocalProxyController: ObservableObject {
         healthState = .unhealthy
         status = .failed
         lastMessage = "Не удалось запустить после \(maxAttempts) попыток: \(lastError?.localizedDescription ?? "unknown")"
+        
+        // Record metrics
+        metrics.recordEvent(.failedStart(reason: lastError?.localizedDescription ?? "unknown"))
+        metrics.save()
+        
         appendLog(.error, "All start attempts failed")
     }
 
@@ -139,8 +162,29 @@ final class LocalProxyController: ObservableObject {
         guard let activeProfile else {
             return
         }
+        
+        // Record metrics
+        metrics.recordEvent(.manualRestart)
+        metrics.save()
 
         scheduleRestart(profile: activeProfile, reason: "Перезапускаю локальный SOCKS...", delayNanoseconds: 0)
+    }
+    
+    func resetMetrics() {
+        metrics.reset()
+    }
+    
+    func checkReadiness() async {
+        readinessState = .checking
+        let result = await ReadinessChecker.check(
+            status: status,
+            healthState: healthState,
+            socksPort: socksPort,
+            credentials: credentials
+        )
+        readinessState = result.state
+        readinessChecks = result.checks
+        appendLog(.info, "Readiness check: \(result.state.rawValue)")
     }
 
     func stop() {
@@ -157,6 +201,15 @@ final class LocalProxyController: ObservableObject {
         
         isOperationInProgress = true
         defer { isOperationInProgress = false }
+        
+        // Record session end
+        if let startTime = sessionStartTime {
+            let duration = Date().timeIntervalSince(startTime)
+            metrics.recordEvent(.sessionEnd(duration: duration))
+            metrics.recordEvent(.networkUsage(type: lastNetworkType, duration: duration))
+            metrics.save()
+            sessionStartTime = nil
+        }
         
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -177,6 +230,8 @@ final class LocalProxyController: ObservableObject {
         stopPathMonitor()
         status = .stopped
         lastMessage = nil
+        readinessState = .notReady
+        readinessChecks = []
         appendLog(.info, "Stopped")
     }
 
@@ -247,7 +302,9 @@ final class LocalProxyController: ObservableObject {
     }
 
     private func handlePathUpdate(_ snapshot: NetworkPathSnapshot) {
+        let previousNetwork = networkName
         networkName = snapshot.name
+        lastNetworkType = snapshot.name
 
         if lastPathSignature == nil {
             lastPathSignature = snapshot.signature
@@ -274,6 +331,10 @@ final class LocalProxyController: ObservableObject {
         guard status == .running || status == .failed || status == .needsTunnelRestart else {
             return
         }
+        
+        // Record network change
+        metrics.recordEvent(.networkChange(from: previousNetwork, to: snapshot.name))
+        metrics.save()
 
         // Debounce network changes
         networkChangeTask?.cancel()
@@ -304,6 +365,8 @@ final class LocalProxyController: ObservableObject {
         }
         
         appendLog(.warning, "Network change broke the tunnel")
+        metrics.recordEvent(.reconnect(reason: "Network change"))
+        metrics.save()
         enterExternalTunnelRecovery("Network changed to \(snapshot.name)")
     }
 
@@ -429,6 +492,9 @@ final class LocalProxyController: ObservableObject {
 
         if consecutiveHealthFailures >= 2 {
             appendLog(.warning, "Watchdog: restarting local SOCKS after repeated failures")
+            metrics.recordEvent(.watchdogRestart)
+            metrics.recordEvent(.reconnect(reason: "Watchdog health check failed"))
+            metrics.save()
             scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: тестовый CONNECT не проходит.", delayNanoseconds: 0)
         }
     }

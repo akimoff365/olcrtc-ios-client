@@ -42,6 +42,18 @@ struct ContentView: View {
                         canRestart: proxy.canRestart,
                         canStop: proxy.status != .stopped
                     )
+                    
+                    if proxy.status == .running {
+                        ReadinessPanel(
+                            state: proxy.readinessState,
+                            checks: proxy.readinessChecks,
+                            refresh: {
+                                Task {
+                                    await proxy.checkReadiness()
+                                }
+                            }
+                        )
+                    }
 
                     ImportPanel(
                         importText: $importText,
@@ -84,6 +96,10 @@ struct ContentView: View {
                         copied: copiedLogs,
                         copy: copyLogs
                     )
+                    
+                    MetricsPanel(metrics: proxy.metrics, reset: {
+                        proxy.resetMetrics()
+                    })
                 }
                 .padding(16)
             }
@@ -1065,6 +1081,453 @@ private enum ProxyCopyKind: Equatable {
     case socks
     case socks5
     case settings
+}
+
+// MARK: - Metrics Panel
+
+private struct ReadinessPanel: View {
+    let state: ReadinessState
+    let checks: [ReadinessCheck]
+    let refresh: () -> Void
+    @State private var showingDetails = false
+    
+    var body: some View {
+        Panel(title: "Готовность", systemImage: "checkmark.shield.fill") {
+            VStack(spacing: 14) {
+                // Main indicator
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(stateColor.opacity(0.15))
+                            .frame(width: 60, height: 60)
+                        
+                        Image(systemName: state.icon)
+                            .font(.title2)
+                            .foregroundStyle(stateColor)
+                            .symbolEffect(.pulse, options: .repeating, value: state == .checking)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(state.rawValue)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(stateColor)
+                        
+                        Text(state.message)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Quick checks summary
+                if !checks.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(checks) { check in
+                            VStack(spacing: 4) {
+                                Image(systemName: check.icon)
+                                    .font(.caption)
+                                    .foregroundStyle(check.passed ? Color.green : Color.red)
+                                Text(check.name.split(separator: " ").first ?? "")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                    )
+                }
+                
+                // Actions
+                HStack(spacing: 10) {
+                    Button(action: refresh) {
+                        Label("Проверить", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(stateColor)
+                    .disabled(state == .checking)
+                    
+                    if !checks.isEmpty {
+                        Button(action: { showingDetails = true }) {
+                            Label("Детали", systemImage: "info.circle")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingDetails) {
+            ReadinessDetailView(state: state, checks: checks)
+        }
+    }
+    
+    private var stateColor: Color {
+        switch state {
+        case .notReady: return .red
+        case .checking: return .orange
+        case .ready: return .green
+        case .readyWithIssues: return .orange
+        }
+    }
+}
+
+private struct ReadinessDetailView: View {
+    let state: ReadinessState
+    let checks: [ReadinessCheck]
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack {
+                        Image(systemName: state.icon)
+                            .font(.title)
+                            .foregroundStyle(stateColor)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(state.rawValue)
+                                .font(.title3.weight(.bold))
+                            Text(state.message)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section("Проверки") {
+                    ForEach(checks) { check in
+                        HStack(spacing: 12) {
+                            Image(systemName: check.icon)
+                                .font(.title3)
+                                .foregroundStyle(check.passed ? Color.green : Color.red)
+                                .frame(width: 30)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(check.name)
+                                    .font(.headline)
+                                if let message = check.message {
+                                    Text(message)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            Text(check.passed ? "OK" : "Fail")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(check.passed ? .green : .red)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                
+                Section("Рекомендации") {
+                    if state == .notReady {
+                        Text("Запустите профиль для начала работы")
+                    } else if state == .readyWithIssues {
+                        Text("Некоторые проверки не прошли. Попробуйте перезапустить SOCKS.")
+                    } else if state == .ready {
+                        Text("Всё готово! Теперь можно включить профиль во внешнем VPN-клиенте.")
+                    }
+                }
+            }
+            .navigationTitle("Проверка готовности")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private var stateColor: Color {
+        switch state {
+        case .notReady: return .red
+        case .checking: return .orange
+        case .ready: return .green
+        case .readyWithIssues: return .orange
+        }
+    }
+}
+
+// MARK: - Metrics Panel
+
+private struct MetricsPanel: View {
+    let metrics: ConnectionMetrics
+    let reset: () -> Void
+    @State private var showingDetails = false
+    
+    var body: some View {
+        Panel(title: "Статистика", systemImage: "chart.bar.fill") {
+            VStack(alignment: .leading, spacing: 14) {
+                // Quick stats
+                HStack(spacing: 12) {
+                    StatCard(title: "Uptime", value: metrics.formattedTotalUptime, icon: "clock.fill", color: .blue)
+                    StatCard(title: "Успех", value: String(format: "%.0f%%", metrics.successRate), icon: "checkmark.circle.fill", color: .green)
+                    StatCard(title: "Здоровье", value: String(format: "%.0f", metrics.healthScore), icon: "heart.fill", color: healthColor)
+                }
+                
+                // Reconnects
+                HStack(spacing: 12) {
+                    MiniStatCard(title: "Реконнекты", value: "\(metrics.totalReconnects)", icon: "arrow.triangle.2.circlepath")
+                    MiniStatCard(title: "Сеть", value: "\(metrics.networkChanges)", icon: "network")
+                    MiniStatCard(title: "Watchdog", value: "\(metrics.watchdogRestarts)", icon: "eye.fill")
+                }
+                
+                // Session info
+                VStack(alignment: .leading, spacing: 8) {
+                    InfoRow(label: "Средняя сессия", value: metrics.formattedAverageSession)
+                    InfoRow(label: "Самая длинная", value: metrics.formattedLongestSession)
+                    if let lastConnection = metrics.lastSuccessfulConnection {
+                        InfoRow(label: "Последнее подключение", value: formatRelativeTime(lastConnection))
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                )
+                
+                // Actions
+                HStack(spacing: 10) {
+                    Button(action: { showingDetails = true }) {
+                        Label("Подробнее", systemImage: "chart.xyaxis.line")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Button(role: .destructive, action: reset) {
+                        Label("Сбросить", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .sheet(isPresented: $showingDetails) {
+            MetricsDetailView(metrics: metrics)
+        }
+    }
+    
+    private var healthColor: Color {
+        if metrics.healthScore >= 80 {
+            return .green
+        } else if metrics.healthScore >= 50 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
+    private func formatRelativeTime(_ date: Date) -> String {
+        let interval = Date().timeIntervalSince(date)
+        if interval < 60 {
+            return "только что"
+        } else if interval < 3600 {
+            return "\(Int(interval / 60))м назад"
+        } else if interval < 86400 {
+            return "\(Int(interval / 3600))ч назад"
+        } else {
+            return "\(Int(interval / 86400))д назад"
+        }
+    }
+}
+
+private struct StatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct MiniStatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+}
+
+private struct InfoRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+        }
+    }
+}
+
+private struct MetricsDetailView: View {
+    let metrics: ConnectionMetrics
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Общая статистика") {
+                    DetailRow(label: "Всего запусков", value: "\(metrics.successfulStarts + metrics.failedStarts)")
+                    DetailRow(label: "Успешных", value: "\(metrics.successfulStarts)")
+                    DetailRow(label: "Неудачных", value: "\(metrics.failedStarts)")
+                    DetailRow(label: "Процент успеха", value: String(format: "%.1f%%", metrics.successRate))
+                }
+                
+                Section("Реконнекты") {
+                    DetailRow(label: "Всего", value: "\(metrics.totalReconnects)")
+                    DetailRow(label: "Ручных", value: "\(metrics.manualRestarts)")
+                    DetailRow(label: "Watchdog", value: "\(metrics.watchdogRestarts)")
+                    DetailRow(label: "Смен сети", value: "\(metrics.networkChanges)")
+                    DetailRow(label: "В среднем/день", value: String(format: "%.1f", metrics.averageReconnectsPerDay))
+                }
+                
+                Section("Сессии") {
+                    DetailRow(label: "Общее время", value: metrics.formattedTotalUptime)
+                    DetailRow(label: "Средняя длина", value: metrics.formattedAverageSession)
+                    DetailRow(label: "Самая длинная", value: metrics.formattedLongestSession)
+                }
+                
+                if !metrics.failureReasons.isEmpty {
+                    Section("Причины ошибок") {
+                        ForEach(Array(metrics.failureReasons.sorted(by: { $0.value > $1.value })), id: \.key) { reason, count in
+                            HStack {
+                                Text(reason)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                Spacer()
+                                Text("\(count)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                    }
+                }
+                
+                if !metrics.networkTypeUsage.isEmpty {
+                    Section("Использование сетей") {
+                        ForEach(Array(metrics.networkTypeUsage.sorted(by: { $0.value > $1.value })), id: \.key) { type, duration in
+                            HStack {
+                                Text(type)
+                                Spacer()
+                                Text(formatDuration(duration))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                if !metrics.sessionHistory.isEmpty {
+                    Section("История (последние 20)") {
+                        ForEach(Array(metrics.sessionHistory.prefix(20))) { record in
+                            HStack {
+                                Text(record.formattedDate)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(record.event)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Подробная статистика")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)ч \(minutes)м"
+        } else {
+            return "\(minutes)м"
+        }
+    }
+}
+
+private struct DetailRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+    }
 }
 
 // MARK: - Toast System
