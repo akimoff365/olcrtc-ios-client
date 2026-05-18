@@ -34,10 +34,11 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var readinessChecks: [ReadinessCheck] = []
     @Published private(set) var profilePingResults: [String: ProfilePingResult] = [:]
 
-    private let watchdogInitialDelayNanoseconds: UInt64 = 8_000_000_000
-    private let watchdogBaseIntervalNanoseconds: UInt64 = 25_000_000_000
-    private var watchdogIntervalNanoseconds: UInt64 = 25_000_000_000
-    private let watchdogMaxIntervalNanoseconds: UInt64 = 120_000_000_000
+    private let watchdogInitialDelayNanoseconds: UInt64 = 90_000_000_000
+    private let watchdogBaseIntervalNanoseconds: UInt64 = 60_000_000_000
+    private var watchdogIntervalNanoseconds: UInt64 = 60_000_000_000
+    private let watchdogMaxIntervalNanoseconds: UInt64 = 240_000_000_000
+    private let watchdogFailureThreshold = 4
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
     private var pathMonitor: NWPathMonitor?
     private var lastPathSignature: String?
@@ -144,7 +145,7 @@ final class LocalProxyController: ObservableObject {
                 
                 // Auto-check readiness
                 Task {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
                     await checkReadiness()
                 }
                 
@@ -444,7 +445,7 @@ final class LocalProxyController: ObservableObject {
         // Debounce network changes
         networkChangeTask?.cancel()
         networkChangeTask = Task { [weak self, snapshot] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5 seconds
+            try? await Task.sleep(nanoseconds: 7_000_000_000)
             guard !Task.isCancelled, let self else { return }
             await self.processNetworkChange(snapshot)
         }
@@ -691,7 +692,7 @@ final class LocalProxyController: ObservableObject {
 
     private func runWatchdogTick() async {
         guard status == .running,
-              let activeProfile,
+              activeProfile != nil,
               !isOperationInProgress else {
             return
         }
@@ -721,14 +722,15 @@ final class LocalProxyController: ObservableObject {
         healthState = .unhealthy
         // Increase interval on failure
         watchdogIntervalNanoseconds = min(watchdogIntervalNanoseconds * 2, watchdogMaxIntervalNanoseconds)
-        appendLog(.warning, "Watchdog: tunnel CONNECT failed (\(consecutiveHealthFailures)/2), next check in \(watchdogIntervalNanoseconds / 1_000_000_000)s")
+        appendLog(.warning, "Watchdog: tunnel CONNECT failed (\(consecutiveHealthFailures)/\(watchdogFailureThreshold)), next check in \(watchdogIntervalNanoseconds / 1_000_000_000)s")
 
-        if consecutiveHealthFailures >= 2 {
-            appendLog(.warning, "Watchdog: restarting local SOCKS after repeated failures")
+        if consecutiveHealthFailures >= watchdogFailureThreshold {
+            appendLog(.warning, "Watchdog: repeated failures; waiting for manual restart to avoid interrupting external VPN")
             metrics.recordEvent(.watchdogRestart)
-            metrics.recordEvent(.reconnect(reason: "Watchdog health check failed"))
             metrics.save()
-            scheduleRestart(profile: activeProfile, reason: "Watchdog перезапускает SOCKS: тестовый CONNECT не проходит.", delayNanoseconds: 0)
+            stopWatchdog()
+            status = .needsTunnelRestart
+            lastMessage = "Проверка маршрута не проходит. Если интернет во внешнем VPN пропал, выключи внешний VPN, затем перезапусти SOCKS."
         }
     }
 
@@ -869,7 +871,9 @@ final class LocalProxyController: ObservableObject {
         }
 
         let visibleName = names.isEmpty ? "Нет" : names.joined(separator: " + ")
-        let signature = "\(statusName)|\(path.isExpensive)|\(path.isConstrained)|\(visibleName)"
+        let physicalName = names.filter { $0 != "Другая" }.joined(separator: " + ")
+        let stablePhysicalName = physicalName.isEmpty ? "Нет" : physicalName
+        let signature = "\(statusName)|\(path.isExpensive)|\(stablePhysicalName)"
         return NetworkPathSnapshot(signature: signature, name: visibleName, isSatisfied: path.status == .satisfied)
     }
 }
