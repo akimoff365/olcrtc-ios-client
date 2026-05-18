@@ -659,6 +659,11 @@ final class LocalProxyController: ObservableObject {
         isInBackground = true
         // Increase watchdog interval in background to save battery
         if status == .running {
+            do {
+                try BackgroundKeepAlive.shared.start()
+            } catch {
+                appendLog(.warning, "Background keep-alive failed: \(error.localizedDescription)")
+            }
             watchdogIntervalNanoseconds = 60_000_000_000
             appendLog(.info, "Entering background, reducing watchdog frequency")
         }
