@@ -33,9 +33,33 @@ targets:
     dependencies:
       - framework: Frameworks/Mobile.xcframework
         embed: true
+      - target: OlcRTCPacketTunnel
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.pasklove.olcrtc
+  OlcRTCPacketTunnel:
+    type: app-extension
+    platform: iOS
+    productType: com.apple.product-type.app-extension
+    sources:
+      - Sources/OlcRTCPacketTunnel
+    info:
+      path: Sources/OlcRTCPacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: OlcRTC Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    entitlements:
+      path: Sources/OlcRTCPacketTunnel/OlcRTCPacketTunnel.entitlements
+      properties: {}
+    dependencies:
+      - framework: Frameworks/Mobile.xcframework
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.pasklove.olcrtc.tunnel
   OlcRTCAppTests:
     type: bundle.unit-test
     platform: iOS

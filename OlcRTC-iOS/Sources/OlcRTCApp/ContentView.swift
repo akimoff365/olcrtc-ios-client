@@ -8,6 +8,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: ProfileStore
     @EnvironmentObject private var proxy: LocalProxyController
+    @StateObject private var vpn = VPNController()
     @State private var importText = ""
     @State private var importError: String?
     @State private var importMessage: String?
@@ -96,6 +97,39 @@ struct ContentView: View {
                         copySocksLink: copySocksLink,
                         copySocks5Link: copySocks5Link,
                         copySettings: copyProxySettings
+                    )
+
+                    VPNPanel(
+                        status: vpn.status,
+                        message: vpn.lastMessage,
+                        canInstall: proxy.activeProfile != nil,
+                        canStart: proxy.activeProfile != nil,
+                        install: {
+                            guard let profile = proxy.activeProfile else {
+                                showToast("Сначала запусти olcRTC профиль", type: .info)
+                                return
+                            }
+                            hapticFeedback(.medium)
+                            Task {
+                                await vpn.install(
+                                    profile: profile,
+                                    socksPort: proxy.socksPort,
+                                    credentials: proxy.credentials
+                                )
+                            }
+                        },
+                        start: {
+                            hapticFeedback(.medium)
+                            Task {
+                                await vpn.start()
+                            }
+                        },
+                        stop: {
+                            hapticFeedback(.heavy)
+                            Task {
+                                await vpn.stop()
+                            }
+                        }
                     )
 
                     DiagnosticsPanel(
@@ -888,6 +922,104 @@ private struct ProxyInfoRow: View {
                 .foregroundStyle(.primary)
             
             Spacer()
+        }
+    }
+}
+
+private struct VPNPanel: View {
+    let status: VPNController.Status
+    let message: String?
+    let canInstall: Bool
+    let canStart: Bool
+    let install: () -> Void
+    let start: () -> Void
+    let stop: () -> Void
+
+    var body: some View {
+        Panel(title: "Системный VPN", systemImage: "shield.lefthalf.filled") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: statusIcon)
+                        .font(.title3)
+                        .foregroundStyle(statusColor)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(status.rawValue)
+                            .font(.headline)
+                        if let message {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: install) {
+                        Label("Установить", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canInstall)
+
+                    Button(action: start) {
+                        Label("Включить", systemImage: "power")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canStart)
+
+                    Button(role: .destructive, action: stop) {
+                        Image(systemName: "stop.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Для реального запуска на iPhone подпись должна содержать Apple NetworkExtension entitlement. Без него iOS не даст поднять VPN-профиль.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.orange.opacity(0.1))
+                )
+            }
+        }
+    }
+
+    private var statusIcon: String {
+        switch status {
+        case .connected:
+            return "shield.checkered"
+        case .connecting, .loading:
+            return "hourglass"
+        case .failed:
+            return "xmark.octagon.fill"
+        default:
+            return "shield"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .connected:
+            return .green
+        case .connecting, .loading:
+            return .orange
+        case .failed:
+            return .red
+        default:
+            return .secondary
         }
     }
 }
