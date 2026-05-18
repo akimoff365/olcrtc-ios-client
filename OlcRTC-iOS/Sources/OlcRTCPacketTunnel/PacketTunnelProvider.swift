@@ -30,12 +30,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.88.0.1")
         settings.mtu = 1280
         settings.ipv4Settings = NEIPv4Settings(addresses: ["10.88.0.2"], subnetMasks: ["255.255.255.0"])
-        settings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
-        settings.ipv4Settings?.excludedRoutes = [
-            NEIPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
-            NEIPv4Route(destinationAddress: "172.16.0.0", subnetMask: "255.240.0.0"),
-            NEIPv4Route(destinationAddress: "192.168.0.0", subnetMask: "255.255.0.0")
-        ]
         settings.dnsSettings = NEDNSSettings(servers: ["8.8.8.8", "1.1.1.1"])
         settings.proxySettings = proxySettings(port: socksPort)
 
@@ -80,7 +74,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
 
             self.tunnelStarted = true
-            self.startPacketPump()
             completionHandler(nil)
             #else
             completionHandler(TunnelError.mobileFrameworkMissing)
@@ -103,11 +96,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func proxySettings(port: Int) -> NEProxySettings {
         let settings = NEProxySettings()
-        let server = NEProxyServer(address: "127.0.0.1", port: port)
-        settings.httpEnabled = true
-        settings.httpServer = server
-        settings.httpsEnabled = true
-        settings.httpsServer = server
+        settings.autoProxyConfigurationEnabled = true
+        settings.proxyAutoConfigurationJavaScript = """
+        function FindProxyForURL(url, host) {
+            if (isPlainHostName(host)) { return "DIRECT"; }
+            if (host === "localhost" || host === "127.0.0.1") { return "DIRECT"; }
+            if (dnsDomainIs(host, ".local")) { return "DIRECT"; }
+            return "SOCKS5 127.0.0.1:\(port); SOCKS 127.0.0.1:\(port); DIRECT";
+        }
+        """
         settings.excludeSimpleHostnames = true
         settings.exceptionList = [
             "*.local",
@@ -115,20 +112,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             "127.0.0.1"
         ]
         return settings
-    }
-
-    private func startPacketPump() {
-        packetFlow.readPackets { [weak self] packets, protocols in
-            guard let self else {
-                return
-            }
-
-            if !packets.isEmpty {
-                NSLog("OlcRTC PacketTunnel received %d packets without tun2socks engine", packets.count)
-            }
-
-            self.startPacketPump()
-        }
     }
 }
 

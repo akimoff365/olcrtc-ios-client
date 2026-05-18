@@ -11,6 +11,7 @@
 - Поддержку актуального `jitsi` carrier из ветки `refactor/universal-carrier`.
 - XcodeGen-конфиг, чтобы быстро собрать проект на macOS.
 - GitHub Actions workflow для сборки на macOS runner.
+- `NetworkExtension` target `OlcRTCPacketTunnel` для системного VPN-профиля.
 
 ## Важное ограничение
 
@@ -26,7 +27,12 @@
 
 Ключи `olcrtc://` профилей тоже сохраняются в Keychain. В `UserDefaults` остается только публичная часть профиля.
 
-Без `NetworkExtension` это не системный VPN: Safari и большинство приложений iOS не будут автоматически использовать этот SOCKS. Такой режим полезен именно как приложение-компаньон для клиентов, которые умеют ходить через локальный SOCKS.
+В приложении теперь есть два режима:
+
+- `Локальный прокси` - старый совместимый SOCKS5 режим для внешних клиентов.
+- `Системный VPN` - iOS `PacketTunnelProvider`, который запускает olcRTC внутри VPN extension и публикует системный SOCKS/PAC профиль без Happ.
+
+Текущий `Системный VPN` режим не использует default route, чтобы не создавать черную дыру до появления packet engine. Он применяет системный PAC `SOCKS5 127.0.0.1:<port>` для HTTP/HTTPS-трафика. Для полного "все IP-пакеты iPhone через olcRTC" нужен следующий слой: `tun2socks` внутри extension.
 
 Еще один iOS-нюанс: без `NetworkExtension` система может приостановить процесс в фоне, и тогда внешний клиент потеряет локальный SOCKS. В приложении включен silent audio keep-alive через `UIBackgroundModes: audio`, чтобы процесс продолжал жить после переключения во внешний VPN-клиент.
 
@@ -38,12 +44,13 @@
 
 В разделе `Диагностика` можно скопировать последние события: запуск, остановку, смену сети, проверки watchdog и ошибки запуска.
 
-Для полноценного "VPN для всего iPhone" позже нужен `PacketTunnelProvider` плюс `tun2socks`, который будет читать пакеты из `NEPacketTunnelFlow` и отправлять их в локальный SOCKS5 `olcrtc`.
+Для полноценного "VPN для всего iPhone" нужен `tun2socks`, который будет читать пакеты из `NEPacketTunnelFlow` и отправлять их в локальный SOCKS5 `olcrtc`.
 
 ## Структура
 
 - `project.yml` - XcodeGen-проект.
 - `Sources/OlcRTCApp` - основное iOS-приложение.
+- `Sources/OlcRTCPacketTunnel` - iOS Packet Tunnel extension.
 - `Tests/OlcRTCAppTests` - тесты парсера URI.
 - `Scripts/build-mobile-xcframework.sh` - сборка Go Mobile framework из `openlibrecommunity/olcrtc`.
 - `.github/workflows/olcrtc-ios.yml` - сборка через GitHub Actions.

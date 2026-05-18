@@ -64,7 +64,7 @@ final class VPNController: ObservableObject {
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
             status = .installed
-            lastMessage = "VPN профиль установлен. iOS может запросить подтверждение."
+            lastMessage = "VPN профиль установлен. Сейчас это системный SOCKS/PAC режим без Happ."
         } catch {
             status = .failed
             lastMessage = error.localizedDescription

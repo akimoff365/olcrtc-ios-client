@@ -983,7 +983,7 @@ private struct VPNPanel: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text("Для реального запуска на iPhone подпись должна содержать Apple NetworkExtension entitlement. Без него iOS не даст поднять VPN-профиль.")
+                    Text("Текущий режим поднимает iOS VPN-профиль и системный SOCKS/PAC без Happ. Для полного packet tunnel нужен следующий слой: tun2socks внутри extension.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
