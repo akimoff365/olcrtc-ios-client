@@ -143,11 +143,8 @@ final class LocalProxyController: ObservableObject {
                     NotificationManager.shared.send(.connectionRestored)
                 }
                 
-                // Auto-check readiness
-                Task {
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    await checkReadiness()
-                }
+                readinessState = .ready
+                readinessChecks = []
                 
                 return
             } catch {
@@ -578,10 +575,8 @@ final class LocalProxyController: ObservableObject {
                 appendLog(.success, "Network recovery succeeded on attempt \(index + 1)")
                 NotificationManager.shared.send(.connectionRestored)
 
-                Task {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    await checkReadiness()
-                }
+                readinessState = .ready
+                readinessChecks = []
                 return
             } catch {
                 stopEngineInBackground()

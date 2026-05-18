@@ -16,6 +16,7 @@ enum OlcRTCEngine {
         MobileSetProviders()
         MobileSetDNS("8.8.8.8:53")
         MobileSetTransport(profile.transport)
+        MobileSetLivenessOptions(20_000, 15_000, 12)
 
         if profile.transport == "vp8channel" {
             let fps = Int(profile.payload["vp8-fps"] ?? "") ?? 60
