@@ -16,6 +16,31 @@ enum KeychainStore {
         return result as? Data
     }
 
+    static func readAll(service: String) -> [(account: String, data: Data)] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let items = result as? [[String: Any]] else {
+            return []
+        }
+
+        return items.compactMap { item in
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  let data = item[kSecValueData as String] as? Data else {
+                return nil
+            }
+            return (account, data)
+        }
+    }
+
     static func save(_ data: Data, service: String, account: String) {
         let query = baseQuery(service: service, account: account)
         let update = [kSecValueData as String: data]
