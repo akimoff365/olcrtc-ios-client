@@ -91,7 +91,7 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
     }
 
     var startAttemptCount: Int {
-        isJitsiDatachannel ? 2 : 3
+        3
     }
 
     var startReadyTimeoutMilliseconds: Int {

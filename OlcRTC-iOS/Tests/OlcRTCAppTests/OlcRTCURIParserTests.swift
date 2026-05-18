@@ -74,7 +74,7 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.compatibilityLabel, "stable")
         XCTAssertEqual(profile.roomLabel, "meet.cryptopro.ru")
         XCTAssertTrue(profile.isJitsiDatachannel)
-        XCTAssertEqual(profile.startAttemptCount, 2)
+        XCTAssertEqual(profile.startAttemptCount, 3)
         XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 90_000)
         XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 20_000_000_000)
 

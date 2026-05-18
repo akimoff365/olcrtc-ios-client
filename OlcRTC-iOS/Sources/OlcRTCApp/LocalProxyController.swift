@@ -34,9 +34,10 @@ final class LocalProxyController: ObservableObject {
     @Published private(set) var readinessChecks: [ReadinessCheck] = []
     @Published private(set) var profilePingResults: [String: ProfilePingResult] = [:]
 
-    private let watchdogInitialDelayNanoseconds: UInt64 = 20_000_000_000
-    private var watchdogIntervalNanoseconds: UInt64 = 45_000_000_000
-    private let watchdogMaxIntervalNanoseconds: UInt64 = 300_000_000_000
+    private let watchdogInitialDelayNanoseconds: UInt64 = 8_000_000_000
+    private let watchdogBaseIntervalNanoseconds: UInt64 = 25_000_000_000
+    private var watchdogIntervalNanoseconds: UInt64 = 25_000_000_000
+    private let watchdogMaxIntervalNanoseconds: UInt64 = 120_000_000_000
     private let pathQueue = DispatchQueue(label: "ru.pasklove.olcrtc.path-monitor")
     private var pathMonitor: NWPathMonitor?
     private var lastPathSignature: String?
@@ -83,7 +84,7 @@ final class LocalProxyController: ObservableObject {
         networkName = "Проверка"
         healthState = .checking
         consecutiveHealthFailures = 0
-        watchdogIntervalNanoseconds = 45_000_000_000
+        watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
         appendLog(
             .info,
             "Starting profile: \(profile.displayName)",
@@ -329,7 +330,7 @@ final class LocalProxyController: ObservableObject {
         healthState = .idle
         consecutiveHealthFailures = 0
         lastPathSignature = nil
-        watchdogIntervalNanoseconds = 45_000_000_000
+        watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
         lastUptimeNotificationHours = 0
         stopPathMonitor()
         status = .stopped
@@ -498,7 +499,7 @@ final class LocalProxyController: ObservableObject {
         stopEngineInBackground()
         healthState = .checking
         consecutiveHealthFailures = 0
-        watchdogIntervalNanoseconds = 45_000_000_000
+        watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
         status = .restarting
         lastMessage = "Сеть изменилась. Пробую восстановить SOCKS автоматически..."
         appendLog(.warning, "\(reason). Auto recovery started")
@@ -510,10 +511,13 @@ final class LocalProxyController: ObservableObject {
 
     private func runAutomaticNetworkRecovery(profile: OlcRTCProfile, reason: String) async {
         let delays: [UInt64] = [
+            500_000_000,
             2_000_000_000,
+            5_000_000_000,
             6_000_000_000,
             12_000_000_000,
-            24_000_000_000
+            24_000_000_000,
+            36_000_000_000
         ]
 
         for (index, delay) in delays.enumerated() {
@@ -527,6 +531,7 @@ final class LocalProxyController: ObservableObject {
 
             if isOperationInProgress {
                 appendLog(.warning, "Network recovery attempt \(index + 1)/\(delays.count) delayed: operation in progress")
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 continue
             }
 
@@ -609,7 +614,7 @@ final class LocalProxyController: ObservableObject {
             while !Task.isCancelled {
                 await self?.runWatchdogTick()
                 // Use dynamic interval
-                let interval = await self?.watchdogIntervalNanoseconds ?? 45_000_000_000
+                let interval = await self?.watchdogIntervalNanoseconds ?? self?.watchdogBaseIntervalNanoseconds ?? 25_000_000_000
                 try? await Task.sleep(nanoseconds: interval)
             }
         }
@@ -628,7 +633,10 @@ final class LocalProxyController: ObservableObject {
         
         // Restore normal watchdog interval if running
         if status == .running {
-            watchdogIntervalNanoseconds = 45_000_000_000
+            watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
+            if pathMonitor == nil {
+                startPathMonitor()
+            }
         }
         
         guard status == .running, foregroundCheckTask == nil else {
@@ -650,7 +658,7 @@ final class LocalProxyController: ObservableObject {
         isInBackground = true
         // Increase watchdog interval in background to save battery
         if status == .running {
-            watchdogIntervalNanoseconds = 120_000_000_000 // 2 minutes
+            watchdogIntervalNanoseconds = 60_000_000_000
             appendLog(.info, "Entering background, reducing watchdog frequency")
         }
     }
@@ -673,7 +681,11 @@ final class LocalProxyController: ObservableObject {
             healthState = .healthy
             logForegroundSuccessIfNeeded(previousHealth: previousHealth)
         } else {
-            enterExternalTunnelRecovery("Foreground check failed")
+            guard let activeProfile else {
+                enterExternalTunnelRecovery("Foreground check failed")
+                return
+            }
+            beginAutomaticNetworkRecovery(profile: activeProfile, reason: "Foreground check failed")
         }
     }
 
@@ -698,7 +710,7 @@ final class LocalProxyController: ObservableObject {
             consecutiveHealthFailures = 0
             healthState = .healthy
             // Reset interval on success
-            watchdogIntervalNanoseconds = 45_000_000_000
+            watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
             if previousHealth != .healthy {
                 appendLog(.success, "Watchdog: tunnel CONNECT restored")
             }
@@ -771,7 +783,7 @@ final class LocalProxyController: ObservableObject {
         stopEngineInBackground()
         healthState = .unhealthy
         consecutiveHealthFailures = 0
-        watchdogIntervalNanoseconds = 45_000_000_000
+        watchdogIntervalNanoseconds = watchdogBaseIntervalNanoseconds
         status = .needsTunnelRestart
         lastMessage = "Сеть изменилась. Выключи туннель во внешнем VPN-клиенте, нажми «Перезапустить», затем включи туннель обратно."
         
