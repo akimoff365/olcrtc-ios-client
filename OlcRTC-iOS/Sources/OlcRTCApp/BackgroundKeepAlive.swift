@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import MediaPlayer
 import UIKit
 
 @MainActor
@@ -8,29 +9,96 @@ final class BackgroundKeepAlive {
 
     private var player: AVAudioPlayer?
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var didConfigureRemoteCommands = false
 
     private init() {}
 
     func start() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
         try session.setActive(true)
 
         if player == nil {
             player = try AVAudioPlayer(data: Self.keepAliveWAVData())
             player?.numberOfLoops = -1
-            player?.volume = 0.01
+            player?.volume = 0.02
             player?.prepareToPlay()
         }
 
+        configureRemoteCommandsIfNeeded()
+        updateNowPlayingInfo(isPlaying: true)
+        UIApplication.shared.beginReceivingRemoteControlEvents()
         beginBackgroundTask()
         player?.play()
     }
 
     func stop() {
         player?.stop()
+        updateNowPlayingInfo(isPlaying: false)
+        UIApplication.shared.endReceivingRemoteControlEvents()
         endBackgroundTask()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    func refresh() {
+        guard let player else {
+            return
+        }
+
+        if !player.isPlaying {
+            player.play()
+        }
+        updateNowPlayingInfo(isPlaying: true)
+        beginBackgroundTask()
+    }
+
+    private func configureRemoteCommandsIfNeeded() {
+        guard !didConfigureRemoteCommands else {
+            return
+        }
+
+        didConfigureRemoteCommands = true
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = false
+        commandCenter.stopCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = false
+        commandCenter.previousTrackCommand.isEnabled = false
+        commandCenter.changePlaybackPositionCommand.isEnabled = false
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+            return .success
+        }
+
+        commandCenter.stopCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+            return .success
+        }
+    }
+
+    private func updateNowPlayingInfo(isPlaying: Bool) {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+            MPMediaItemPropertyTitle: "OlcRTC Link",
+            MPMediaItemPropertyArtist: "Secure relay session",
+            MPMediaItemPropertyAlbumTitle: "OlcRTC",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0
+        ]
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     private func beginBackgroundTask() {

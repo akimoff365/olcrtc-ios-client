@@ -656,6 +656,7 @@ final class LocalProxyController: ObservableObject {
         if status == .running {
             do {
                 try BackgroundKeepAlive.shared.start()
+                BackgroundKeepAlive.shared.refresh()
             } catch {
                 appendLog(.warning, "Background keep-alive failed: \(error.localizedDescription)")
             }
