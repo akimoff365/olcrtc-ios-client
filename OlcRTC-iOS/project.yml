@@ -7,7 +7,10 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
-packages: {}
+packages:
+  Tun2SocksKit:
+    url: https://github.com/EbrahimTahernejad/Tun2SocksKit
+    from: 5.14.4
 targets:
   OlcRTCClient:
     type: application
@@ -57,6 +60,7 @@ targets:
     dependencies:
       - framework: Frameworks/Mobile.xcframework
         embed: true
+      - package: Tun2SocksKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.pasklove.olcrtc.tunnel

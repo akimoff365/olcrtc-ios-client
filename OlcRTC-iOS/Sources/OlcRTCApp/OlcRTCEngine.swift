@@ -17,12 +17,7 @@ enum OlcRTCEngine {
         MobileSetDNS("8.8.8.8:53")
         MobileSetTransport(profile.transport)
         MobileSetLivenessOptions(20_000, 15_000, 12)
-
-        if profile.transport == "vp8channel" {
-            let fps = Int(profile.payload["vp8-fps"] ?? "") ?? 60
-            let batch = Int(profile.payload["vp8-batch"] ?? "") ?? 64
-            MobileSetVP8Options(fps, batch)
-        }
+        configureTransportOptions(profile)
 
         var startError: NSError?
         let started = MobileStartWithTransport(
@@ -53,6 +48,40 @@ enum OlcRTCEngine {
         }
         #else
         throw RuntimeError.frameworkMissing
+        #endif
+    }
+
+    private static func configureTransportOptions(_ profile: OlcRTCProfile) {
+        #if canImport(Mobile)
+        switch profile.transport {
+        case "vp8channel":
+            MobileSetVP8Options(
+                profile.payloadInt("vp8-fps", default: 60),
+                profile.payloadInt("vp8-batch", default: 64)
+            )
+        case "seichannel":
+            MobileSetSEIOptions(
+                profile.payloadInt("fps", default: 0),
+                profile.payloadInt("batch", default: 0),
+                profile.payloadInt("frag", default: 0),
+                profile.payloadInt("ack-ms", default: 0)
+            )
+        case "videochannel":
+            MobileSetVideoOptions(
+                profile.payloadInt("video-w", default: 0),
+                profile.payloadInt("video-h", default: 0),
+                profile.payloadInt("video-fps", default: 0),
+                profile.payload["video-bitrate"] ?? "",
+                profile.payload["video-hw"] ?? "",
+                profile.payloadInt("video-qr-size", default: 0),
+                profile.payload["video-qr-recovery"] ?? "",
+                profile.payload["video-codec"] ?? "",
+                profile.payloadInt("video-tile-module", default: 0),
+                profile.payloadInt("video-tile-rs", default: 0)
+            )
+        default:
+            break
+        }
         #endif
     }
 
@@ -335,6 +364,12 @@ enum OlcRTCEngine {
                 return "olcrtc SOCKS proxy was not ready in time."
             }
         }
+    }
+}
+
+private extension OlcRTCProfile {
+    func payloadInt(_ key: String, default defaultValue: Int) -> Int {
+        Int(payload[key] ?? "") ?? defaultValue
     }
 }
 

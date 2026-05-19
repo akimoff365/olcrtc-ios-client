@@ -20,8 +20,10 @@ else
 fi
 
 pushd "$OLCRTC_DIR" >/dev/null
+echo "Using olcRTC $(git rev-parse --short HEAD) from $OLCRTC_REF"
 for patch_file in "$ROOT_DIR"/Patches/*.patch; do
   [[ -e "$patch_file" ]] || continue
+  echo "Applying $(basename "$patch_file")"
   git apply --check "$patch_file"
   git apply "$patch_file"
 done

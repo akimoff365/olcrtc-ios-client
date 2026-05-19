@@ -50,6 +50,41 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.payload["vp8-batch"], "64")
     }
 
+    func testParsesSEIPayload() throws {
+        let key = String(repeating: "c", count: 64)
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://jazz?seichannel<fps=60&batch=64&frag=900&ack-ms=2000>@room-01#\(key)$Jazz SEI"
+        )
+
+        XCTAssertEqual(profile.carrier, "jazz")
+        XCTAssertEqual(profile.transport, "seichannel")
+        XCTAssertEqual(profile.payload["fps"], "60")
+        XCTAssertEqual(profile.payload["batch"], "64")
+        XCTAssertEqual(profile.payload["frag"], "900")
+        XCTAssertEqual(profile.payload["ack-ms"], "2000")
+        XCTAssertTrue(profile.clientID.hasPrefix("ios-"))
+        XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 30_000)
+        XCTAssertEqual(profile.tunnelCheckTimeoutNanoseconds, 16_000_000_000)
+    }
+
+    func testParsesVideoPayload() throws {
+        let key = String(repeating: "d", count: 64)
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://telemost?videochannel<video-w=1080&video-h=1080&video-fps=60&video-bitrate=5000k&video-hw=none&video-codec=qrcode>@room-01#\(key)$Telemost video"
+        )
+
+        XCTAssertEqual(profile.carrier, "telemost")
+        XCTAssertEqual(profile.transport, "videochannel")
+        XCTAssertEqual(profile.payload["video-w"], "1080")
+        XCTAssertEqual(profile.payload["video-h"], "1080")
+        XCTAssertEqual(profile.payload["video-fps"], "60")
+        XCTAssertEqual(profile.payload["video-bitrate"], "5000k")
+        XCTAssertEqual(profile.payload["video-hw"], "none")
+        XCTAssertEqual(profile.payload["video-codec"], "qrcode")
+        XCTAssertEqual(profile.compatibilityLabel, "best effort")
+        XCTAssertEqual(profile.startReadyTimeoutMilliseconds, 30_000)
+    }
+
     func testDecodesPercentEncodedFields() throws {
         let profile = try OlcRTCProfile(
             uri: "olcrtc://wbstream?datachannel@room%2D01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%iphone%2D01$CH%20data"

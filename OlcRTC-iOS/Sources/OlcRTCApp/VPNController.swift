@@ -3,6 +3,36 @@ import NetworkExtension
 
 @MainActor
 final class VPNController: ObservableObject {
+    enum TunnelMode: String, CaseIterable, Identifiable {
+        case systemProxy
+        case fullTunnel
+        case splitTunnel
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .systemProxy:
+                return "Прокси"
+            case .fullTunnel:
+                return "Весь"
+            case .splitTunnel:
+                return "Раздельно"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .systemProxy:
+                return "HTTP/HTTPS через системный SOCKS/PAC"
+            case .fullTunnel:
+                return "Packet tunnel через tun2socks"
+            case .splitTunnel:
+                return "Packet tunnel, локальные сети напрямую"
+            }
+        }
+    }
+
     enum Status: String {
         case idle = "Не настроен"
         case loading = "Проверка"
@@ -15,11 +45,19 @@ final class VPNController: ObservableObject {
 
     @Published private(set) var status: Status = .idle
     @Published private(set) var lastMessage: String?
+    @Published var tunnelMode: TunnelMode {
+        didSet {
+            UserDefaults.standard.set(tunnelMode.rawValue, forKey: Self.tunnelModeKey)
+        }
+    }
 
     private let tunnelBundleIdentifier = "ru.pasklove.olcrtc.tunnel"
     private let managerDescription = "OlcRTC Gateway"
+    private static let tunnelModeKey = "olcrtc.vpn.tunnelMode"
 
     init() {
+        let savedMode = UserDefaults.standard.string(forKey: Self.tunnelModeKey)
+        tunnelMode = TunnelMode(rawValue: savedMode ?? "") ?? .systemProxy
         Task {
             await refresh()
         }
@@ -53,6 +91,8 @@ final class VPNController: ObservableObject {
                 "roomID": profile.roomID,
                 "keyHex": profile.keyHex,
                 "clientID": profile.runtimeClientID(),
+                "payload": profile.payload,
+                "tunnelMode": tunnelMode.rawValue,
                 "socksPort": socksPort,
                 "socksUser": credentials.username,
                 "socksPass": credentials.password
@@ -64,7 +104,7 @@ final class VPNController: ObservableObject {
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
             status = .installed
-            lastMessage = "VPN профиль установлен. Сейчас это системный SOCKS/PAC режим без Happ."
+            lastMessage = "VPN профиль установлен: \(tunnelMode.subtitle)."
         } catch {
             status = .failed
             lastMessage = error.localizedDescription

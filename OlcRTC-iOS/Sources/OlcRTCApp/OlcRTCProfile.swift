@@ -80,6 +80,8 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
             return "best effort"
         case ("telemost", "vp8channel"):
             return "stable"
+        case ("telemost", "videochannel"):
+            return "best effort"
         case ("wbstream", "vp8channel"), ("wbstream", "seichannel"), ("wbstream", "videochannel"):
             return "stable"
         default:
@@ -96,11 +98,27 @@ struct OlcRTCProfile: Identifiable, Codable, Equatable, Sendable {
     }
 
     var startReadyTimeoutMilliseconds: Int {
-        isJitsiDatachannel ? 90_000 : 12_000
+        if isJitsiDatachannel {
+            return 90_000
+        }
+        switch transport.lowercased() {
+        case "vp8channel", "seichannel", "videochannel":
+            return 30_000
+        default:
+            return 12_000
+        }
     }
 
     var tunnelCheckTimeoutNanoseconds: UInt64 {
-        isJitsiDatachannel ? 20_000_000_000 : 12_000_000_000
+        if isJitsiDatachannel {
+            return 20_000_000_000
+        }
+        switch transport.lowercased() {
+        case "vp8channel", "seichannel", "videochannel":
+            return 16_000_000_000
+        default:
+            return 12_000_000_000
+        }
     }
 
     func runtimeClientID() -> String {

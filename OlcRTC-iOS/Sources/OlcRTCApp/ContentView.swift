@@ -102,11 +102,15 @@ struct ContentView: View {
                     VPNPanel(
                         status: vpn.status,
                         message: vpn.lastMessage,
-                        canInstall: proxy.activeProfile != nil,
-                        canStart: proxy.activeProfile != nil,
+                        tunnelMode: vpn.tunnelMode,
+                        canInstall: proxy.activeProfile != nil || !store.profiles.isEmpty,
+                        canStart: proxy.activeProfile != nil || !store.profiles.isEmpty,
+                        setTunnelMode: { mode in
+                            vpn.tunnelMode = mode
+                        },
                         install: {
-                            guard let profile = proxy.activeProfile else {
-                                showToast("Сначала запусти olcRTC профиль", type: .info)
+                            guard let profile = proxy.activeProfile ?? store.profiles.first else {
+                                showToast("Сначала импортируй olcRTC профиль", type: .info)
                                 return
                             }
                             hapticFeedback(.medium)
@@ -500,7 +504,7 @@ private struct AppHeader: View {
                             endPoint: .trailing
                         )
                     )
-                Text("Локальный SOCKS-мост для внешнего VPN-клиента")
+                Text("RTC-туннель, локальный SOCKS и системный режим")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -929,8 +933,10 @@ private struct ProxyInfoRow: View {
 private struct VPNPanel: View {
     let status: VPNController.Status
     let message: String?
+    let tunnelMode: VPNController.TunnelMode
     let canInstall: Bool
     let canStart: Bool
+    let setTunnelMode: (VPNController.TunnelMode) -> Void
     let install: () -> Void
     let start: () -> Void
     let stop: () -> Void
@@ -958,6 +964,23 @@ private struct VPNPanel: View {
                     Spacer()
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Режим", selection: Binding(
+                        get: { tunnelMode },
+                        set: { setTunnelMode($0) }
+                    )) {
+                        ForEach(VPNController.TunnelMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(tunnelMode.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 HStack(spacing: 10) {
                     Button(action: install) {
                         Label("Установить", systemImage: "plus.circle.fill")
@@ -981,9 +1004,9 @@ private struct VPNPanel: View {
                 }
 
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("Текущий режим поднимает iOS VPN-профиль и системный SOCKS/PAC без Happ. Для полного packet tunnel нужен следующий слой: tun2socks внутри extension.")
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(.green)
+                    Text("Локальный SOCKS для Happ остаётся отдельным режимом выше. Здесь iOS запускает olcRTC внутри extension; режим «Весь» и «Раздельно» используют tun2socks packet engine.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -991,7 +1014,7 @@ private struct VPNPanel: View {
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.orange.opacity(0.1))
+                        .fill(Color.green.opacity(0.09))
                 )
             }
         }

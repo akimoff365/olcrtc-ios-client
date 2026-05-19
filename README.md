@@ -2,38 +2,44 @@
 
 [![OlcRTC iOS](https://github.com/artpm4250-png/olcrtc-ios-client/actions/workflows/olcrtc-ios.yml/badge.svg)](https://github.com/artpm4250-png/olcrtc-ios-client/actions/workflows/olcrtc-ios.yml)
 
-Нативный iOS-клиент-компаньон для `olcrtc`. Приложение поднимает локальный
-SOCKS5-прокси на iPhone, а внешний VPN-клиент подключается к нему через
-`127.0.0.1`.
+Нативный iOS-клиент для `olcrtc`: локальный SOCKS5 для Happ и других клиентов,
+системный `NetworkExtension` профиль, packet tunnel через tun2socks и аккуратный
+split-routing для локальных сетей.
 
-## Что умеет
+## Возможности
 
-- импорт одной `olcrtc://` ссылки;
-- импорт pasted `sub.md` подписки с несколькими узлами;
-- импорт HTTP/HTTPS URL подписки;
-- SOCKS5 auth и готовые `socks://` / `socks5://` ссылки для внешнего клиента;
-- хранение SOCKS-секретов и ключей профилей в iOS Keychain;
-- автоматический подбор свободного локального SOCKS-порта;
-- проверка не только открытого порта, а реального SOCKS `CONNECT`;
-- watchdog, диагностика и копирование лога;
-- silent audio keep-alive для более стабильной работы в фоне;
-- поддержка `jitsi`, `telemost`, `wbstream` и `jazz` из актуальной ветки `olcrtc`;
-- unsigned IPA сборка через GitHub Actions для подписи через ESign.
+- Импорт `olcrtc://` ссылок, pasted `sub.md` подписок и HTTP/HTTPS subscription URL.
+- Локальный SOCKS5 с авторизацией и готовыми `socks://` / `socks5://` ссылками.
+- Хранение SOCKS-секретов и ключей профилей в iOS Keychain.
+- Автоподбор свободного SOCKS-порта и проверка реального SOCKS `CONNECT`.
+- Watchdog, диагностика, лог событий, ping профиля до Google.
+- Silent audio keep-alive для более живучей работы локального SOCKS в фоне.
+- Поддержка `jitsi`, `telemost`, `wbstream`, `jazz` из `olcrtc@refactor/universal-carrier`.
+- URI payload для `vp8channel`, `seichannel`, `videochannel`.
+- Системный `PacketTunnelProvider` без Happ.
+- Packet mode через `Tun2SocksKit`: весь трафик или split-routing.
+- Unsigned IPA сборка через GitHub Actions для подписи через ESign.
 
-## Важное ограничение
+## Режимы
 
-Это не `NetworkExtension`-VPN. Приложение поднимает локальный SOCKS, а системный
-туннель делает внешний клиент. При смене Wi-Fi/LTE внешний туннель может держать
-сломанный маршрут. В таком случае выключи внешний VPN-клиент, нажми
-`Перезапустить` в OlcRTC Gateway и включи внешний туннель снова.
+| Режим | Для чего | Как работает |
+| --- | --- | --- |
+| Локальный SOCKS | Happ / внешний клиент | Приложение держит `127.0.0.1:<port>` и отдаёт SOCKS5 credentials |
+| Прокси | Быстрый системный режим | iOS PAC отправляет HTTP/HTTPS через локальный SOCKS |
+| Весь | Полный системный туннель | Default route через `Tun2SocksKit` в локальный SOCKS `olcrtc` |
+| Раздельно | VPN без локальных сетей | Default route через tun2socks, private/local CIDR идут напрямую |
+
+В split-routing исключены `10/8`, `100.64/10`, `127/8`, `169.254/16`,
+`172.16/12`, `192.168/16` и multicast.
 
 ## Быстрый старт
 
 1. Скачай последний artifact `OlcRTCClient-unsigned-ipa` из GitHub Actions.
 2. Подпиши `OlcRTCClient-unsigned.ipa` через ESign.
-3. Импортируй `olcrtc://` ссылку или подписку в приложении.
-4. Запусти профиль в OlcRTC Gateway.
-5. Скопируй `socks://` или `socks5://` ссылку во внешний VPN-клиент.
+3. Импортируй `olcrtc://` ссылку или подписку.
+4. Для Happ запусти локальный SOCKS и скопируй `socks://` / `socks5://`.
+5. Для режима без Happ установи системный VPN профиль и выбери `Прокси`, `Весь`
+   или `Раздельно`.
 
 ## Локальный SOCKS
 
@@ -42,33 +48,44 @@ SOCKS5-прокси на iPhone, а внешний VPN-клиент подклю
 - Auth: `On`
 - Username/Password: генерируются приложением и хранятся в Keychain
 
-Ключи `olcrtc://` профилей тоже сохраняются в Keychain. В `UserDefaults`
-остаётся только публичная часть профиля.
+Если порт занят, приложение выберет следующий свободный и покажет его в карточке
+локального прокси.
 
-Если порт занят, приложение выберет следующий свободный и покажет новый порт в
-карточке локального прокси.
+## olcRTC URI
 
-## Jitsi
-
-Сборка Mobile framework закреплена на ветке
-`openlibrecommunity/olcrtc@refactor/universal-carrier`, где добавлен carrier
-`jitsi`. Для Jitsi используем `datachannel`, а в `room` передаём полный URL
-комнаты:
+Актуальный upstream-формат не содержит обязательный `client_id`:
 
 ```text
-olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>$Jitsi data
+olcrtc://<auth>?<transport>@<room>#<64-hex-key>$<name>
 ```
 
-Новый URI-формат upstream не содержит `client-id`. Приложение генерирует
-технический `device_id` само и передаёт его только в mobile API `olcrtc`.
-Этот `device_id` привязан к конкретной установке приложения, поэтому одну и ту
-же ссылку можно давать разным людям: на разных iPhone внутренние идентификаторы
-будут разными.
+Пример Jitsi datachannel:
+
+```text
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#37ab424e157dd43204640bd098196e415ce3676c039e5ba6b2847d54cbe26745$Jitsi data
+```
+
+Технический `device_id` создаётся приложением отдельно для каждой установки, так
+что одну и ту же ссылку можно давать разным людям.
+
+## Сборка
+
+Workflow `.github/workflows/olcrtc-ios.yml` делает:
+
+- сборку `Mobile.xcframework` из `openlibrecommunity/olcrtc@refactor/universal-carrier`;
+- применение compatibility patches из `OlcRTC-iOS/Patches`;
+- генерацию Xcode project через XcodeGen;
+- сборку simulator app;
+- сборку unsigned device app;
+- упаковку unsigned IPA;
+- запуск unit-тестов URI/SOCKS/subscription.
 
 ## Структура
 
 - `OlcRTC-iOS/Sources/OlcRTCApp` - SwiftUI-приложение.
+- `OlcRTC-iOS/Sources/OlcRTCPacketTunnel` - системный Packet Tunnel extension.
 - `OlcRTC-iOS/Tests/OlcRTCAppTests` - тесты URI, SOCKS-ссылок и подписок.
+- `OlcRTC-iOS/Patches` - патчи совместимости для актуального upstream `olcrtc`.
 - `OlcRTC-iOS/Scripts` - сборка gomobile framework и unsigned IPA.
 - `.github/workflows/olcrtc-ios.yml` - macOS CI, сборка IPA и тесты.
 
@@ -76,4 +93,5 @@ olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/myroom#<64-hex-key>$Jitsi d
 
 - [openlibrecommunity/olcrtc](https://github.com/openlibrecommunity/olcrtc)
 - [olcrtc URI format](https://github.com/openlibrecommunity/olcrtc/blob/master/docs/uri.md)
+- [Tun2SocksKit](https://github.com/EbrahimTahernejad/Tun2SocksKit)
 - [plumbicon/olcrtc-call](https://github.com/plumbicon/olcrtc-call)
