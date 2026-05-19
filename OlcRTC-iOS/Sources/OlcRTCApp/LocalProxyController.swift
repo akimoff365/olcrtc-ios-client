@@ -63,6 +63,10 @@ final class LocalProxyController: ObservableObject {
         logs.map(\.line).joined(separator: "\n")
     }
 
+    var sanitizedLogText: String {
+        Self.sanitizeLogs(logText)
+    }
+
     func start(profile: OlcRTCProfile) async {
         guard !isOperationInProgress else {
             appendLog(.warning, "Operation already in progress, ignoring start request")
@@ -746,6 +750,25 @@ final class LocalProxyController: ObservableObject {
         if logs.count > 200 {
             logs.removeLast(logs.count - 200)
         }
+    }
+
+    private static func sanitizeLogs(_ value: String) -> String {
+        let patterns = [
+            #"(?i)(keyhex|key|password|pass|socksPass)=([^,\]\s]+)"#: "$1=<redacted>",
+            #"[A-Fa-f0-9]{64}"#: "<keyhex-redacted>",
+            #"olcrtc://[^\s]+"#: "<olcrtc-uri-redacted>",
+            #"socks5?://[^\s]+"#: "<socks-uri-redacted>"
+        ]
+
+        var sanitized = value
+        for (pattern, replacement) in patterns {
+            sanitized = sanitized.replacingOccurrences(
+                of: pattern,
+                with: replacement,
+                options: .regularExpression
+            )
+        }
+        return sanitized
     }
     
     private func loadPreferredPort() -> Int {

@@ -299,10 +299,10 @@ struct ContentView: View {
 
     private func copyLogs() {
         #if canImport(UIKit)
-        UIPasteboard.general.string = proxy.logText
+        UIPasteboard.general.string = proxy.sanitizedLogText
         copiedLogs = true
         hapticFeedback(.light)
-        showToast("Лог скопирован", type: .success)
+        showToast("Лог скопирован без секретов", type: .success)
         Task {
             try? await Task.sleep(for: .seconds(2))
             copiedLogs = false
@@ -548,11 +548,11 @@ private struct ImportPanel: View {
                     .animation(.easeInOut(duration: 0.2), value: importFocused.wrappedValue)
                     .toolbar {
                         ToolbarItemGroup(placement: .keyboard) {
-                            Button("Cancel") {
+                            Button("Отмена") {
                                 importFocused.wrappedValue = false
                             }
                             Spacer()
-                            Button("Done") {
+                            Button("Готово") {
                                 importFocused.wrappedValue = false
                             }
                             .fontWeight(.semibold)
@@ -1061,7 +1061,7 @@ private struct DiagnosticsPanel: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button(action: copy) {
-                        Label(copied ? "Скопировано" : "Копировать", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        Label(copied ? "Скопировано" : "Без секретов", systemImage: copied ? "checkmark" : "doc.on.doc")
                             .font(.subheadline)
                     }
                     .buttonStyle(.bordered)
