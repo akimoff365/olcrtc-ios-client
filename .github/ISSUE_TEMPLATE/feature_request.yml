@@ -1,0 +1,35 @@
+name: Улучшение
+description: Предложить новую функцию, режим, дизайн или улучшение стабильности.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Идея
+      description: Что хочется добавить или изменить?
+      placeholder: Добавить отдельную диагностику доступности профиля до запуска SOCKS.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Зачем это нужно
+      description: Какую проблему это решает?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options:
+        - UI/дизайн
+        - Локальный SOCKS
+        - System VPN
+        - Split-routing
+        - Импорт подписок
+        - Сборка IPA
+        - Документация
+        - Другое
+    validations:
+      required: true

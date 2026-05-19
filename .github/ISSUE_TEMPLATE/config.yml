@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Upstream olcRTC
+    url: https://github.com/openlibrecommunity/olcrtc
+    about: Ошибки самого протокола и carrier-движка лучше сверять с upstream.

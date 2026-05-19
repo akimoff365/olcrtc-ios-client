@@ -6,6 +6,21 @@
 системный `NetworkExtension` профиль, packet tunnel через tun2socks и аккуратный
 split-routing для локальных сетей.
 
+> Проект ориентирован на сборку unsigned IPA через GitHub Actions и последующую
+> подпись пользователем через ESign, AltStore, SideStore или другой личный способ.
+
+## Статус
+
+| Компонент | Состояние |
+| --- | --- |
+| Локальный SOCKS5 | Работает, есть авторизация и проверка handshake |
+| Импорт подписок | `olcrtc://`, plain text, `sub.md`, HTTP/HTTPS URL |
+| System VPN | Есть `NetworkExtension PacketTunnelProvider` |
+| Полный туннель | Через `Tun2SocksKit` в локальный SOCKS |
+| Раздельный туннель | Private/local CIDR исключены из туннеля |
+| Upstream olcRTC | Сборка подтягивает `refactor/universal-carrier` |
+| IPA | Собирается workflow `OlcRTC iOS` |
+
 ## Возможности
 
 - Импорт `olcrtc://` ссылок, pasted `sub.md` подписок и HTTP/HTTPS subscription URL.
@@ -40,6 +55,16 @@ split-routing для локальных сетей.
 4. Для Happ запусти локальный SOCKS и скопируй `socks://` / `socks5://`.
 5. Для режима без Happ установи системный VPN профиль и выбери `Прокси`, `Весь`
    или `Раздельно`.
+
+## Для тестировщиков
+
+При баг-репорте лучше сразу приложить:
+
+- версию iOS и модель устройства;
+- carrier/provider и тип сети: Wi-Fi, LTE, 5G;
+- режим приложения: локальный SOCKS, Прокси, Весь или Раздельно;
+- транспорт `olcrtc`: `datachannel`, `vp8channel`, `seichannel`, `videochannel`;
+- последние 30-50 строк лога из приложения без приватных ключей.
 
 ## Локальный SOCKS
 
@@ -88,6 +113,20 @@ Workflow `.github/workflows/olcrtc-ios.yml` делает:
 - `OlcRTC-iOS/Patches` - патчи совместимости для актуального upstream `olcrtc`.
 - `OlcRTC-iOS/Scripts` - сборка gomobile framework и unsigned IPA.
 - `.github/workflows/olcrtc-ios.yml` - macOS CI, сборка IPA и тесты.
+
+## Документы
+
+- [Как получить IPA](GET_IPA.md)
+- [Короткий старт](QUICK_START.md)
+- [Что уже сделано](WHATS_DONE.md)
+- [План улучшений](FUTURE_IMPROVEMENTS.md)
+- [Разбор кода](CODE_ANALYSIS.md)
+- [Заметки по дизайну](DESIGN_IMPROVEMENTS.md)
+
+## Вклад в проект
+
+Смотри [CONTRIBUTING.md](CONTRIBUTING.md). Для ошибок используй GitHub Issues:
+так проще не потерять устройство, сеть, профиль и логи.
 
 ## Источники
 

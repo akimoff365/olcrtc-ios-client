@@ -1,0 +1,75 @@
+name: Ошибка в приложении
+description: Сообщить о краше, обрыве соединения, проблеме импорта или VPN.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Что случилось
+      description: Опиши коротко, что не работает.
+      placeholder: После смены Wi-Fi на LTE локальный SOCKS остаётся включённым, но внешний клиент не подключается.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Режим
+      options:
+        - Локальный SOCKS
+        - Прокси
+        - Весь туннель
+        - Раздельный туннель
+        - Не знаю
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: olcRTC transport
+      options:
+        - datachannel
+        - vp8channel
+        - seichannel
+        - videochannel
+        - Не знаю
+    validations:
+      required: true
+  - type: input
+    id: ios
+    attributes:
+      label: iOS и устройство
+      placeholder: iOS 17.5, iPhone 13
+    validations:
+      required: true
+  - type: input
+    id: network
+    attributes:
+      label: Сеть
+      placeholder: Wi-Fi, LTE, 5G, оператор
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: |
+        1. Импортировать профиль
+        2. Запустить SOCKS
+        3. Включить внешний клиент
+        4. Переключить сеть
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи без секретов
+      description: Удали keyhex, реальные комнаты, IP и полные URI.
+      render: text
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Безопасность
+      options:
+        - label: Я удалил из лога ключи, реальные комнаты, IP и приватные ссылки.
+          required: true
