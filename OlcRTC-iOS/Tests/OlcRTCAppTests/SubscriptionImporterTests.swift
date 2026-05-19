@@ -33,4 +33,25 @@ final class SubscriptionImporterTests: XCTestCase {
             try SubscriptionImporter.parseSubscription("#name: empty")
         )
     }
+
+    func testUsesRussianFallbackProfileNames() throws {
+        let key = String(repeating: "b", count: 64)
+        let content = """
+        olcrtc://wbstream?datachannel@room-01#\(key)
+        olcrtc://wbstream?datachannel@room-02#\(key)
+        """
+
+        let result = try SubscriptionImporter.parseSubscription(content)
+
+        XCTAssertEqual(result.profiles.map(\.displayName), ["Профиль 1", "Профиль 2"])
+    }
+
+    func testKeepsInlineOlcRTCCommentsAsNames() throws {
+        let key = String(repeating: "c", count: 64)
+        let content = "olcrtc://wbstream?datachannel@room-01#\(key)$Домашний"
+
+        let result = try SubscriptionImporter.parseSubscription(content)
+
+        XCTAssertEqual(result.profiles.first?.displayName, "Домашний")
+    }
 }

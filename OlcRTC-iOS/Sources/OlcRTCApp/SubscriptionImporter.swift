@@ -16,6 +16,7 @@ enum SubscriptionImportError: LocalizedError {
     case emptyInput
     case noProfiles
     case badHTTPStatus(Int)
+    case bodyTooLarge(Int)
     case nonUTF8Body
     case invalidServer(line: Int, reason: String)
 
@@ -27,6 +28,8 @@ enum SubscriptionImportError: LocalizedError {
             return "В подписке не найдено olcrtc:// профилей."
         case let .badHTTPStatus(status):
             return "Сервер подписки вернул HTTP \(status)."
+        case let .bodyTooLarge(limit):
+            return "Подписка слишком большая. Лимит: \(limit / 1024) KB."
         case .nonUTF8Body:
             return "Подписка не похожа на UTF-8 текст."
         case let .invalidServer(line, reason):
@@ -36,6 +39,9 @@ enum SubscriptionImportError: LocalizedError {
 }
 
 enum SubscriptionImporter {
+    private static let subscriptionTimeout: TimeInterval = 15
+    private static let maxSubscriptionBytes = 512 * 1024
+
     static func importValue(_ rawValue: String) async throws -> SubscriptionImportResult {
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
@@ -98,7 +104,7 @@ enum SubscriptionImporter {
                 let name = normalized(server.fields["name"])
                     ?? normalized(server.fields["comment"])
                     ?? normalized(profile.comment)
-                    ?? "Profile \(index + 1)"
+                    ?? "Профиль \(index + 1)"
                 return profile.renamed(name)
             } catch {
                 throw SubscriptionImportError.invalidServer(line: server.lineNumber, reason: error.localizedDescription)
@@ -130,9 +136,19 @@ enum SubscriptionImporter {
     }
 
     private static func fetchSubscription(from url: URL) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = subscriptionTimeout
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("text/plain, text/markdown, */*", forHTTPHeaderField: "Accept")
+        request.setValue("OlcRTC-iOS/1.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
         if let response = response as? HTTPURLResponse, !(200...299).contains(response.statusCode) {
             throw SubscriptionImportError.badHTTPStatus(response.statusCode)
+        }
+
+        guard data.count <= maxSubscriptionBytes else {
+            throw SubscriptionImportError.bodyTooLarge(maxSubscriptionBytes)
         }
 
         guard let content = String(data: data, encoding: .utf8) else {
