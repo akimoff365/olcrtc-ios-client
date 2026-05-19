@@ -1,7 +1,8 @@
 diff --git a/mobile/mobile.go b/mobile/mobile.go
+index 10a8678..6f7d0e2 100644
 --- a/mobile/mobile.go
 +++ b/mobile/mobile.go
-@@ -19,7 +19,10 @@ import (
+@@ -19,6 +19,9 @@ import (
  	"github.com/openlibrecommunity/olcrtc/internal/logger"
  	"github.com/openlibrecommunity/olcrtc/internal/protect"
  
@@ -11,7 +12,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  	"github.com/openlibrecommunity/olcrtc/internal/transport/vp8channel"
  
  	_ "golang.org/x/mobile/bind"                       // ensure gomobile bind is available
-@@ -83,6 +86,17 @@ type mobileConfig struct {
+@@ -81,6 +84,20 @@ type mobileConfig struct {
  	dnsServer        string
  	vp8FPS           int
  	vp8BatchSize     int
@@ -32,8 +33,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  	livenessInterval time.Duration
  	livenessTimeout  time.Duration
  	livenessFailures int
-@@ -113,7 +127,7 @@ func SetProviders() {
- 	registerDefaults()
+@@ -111,7 +128,7 @@ func SetProviders() {
  }
  
  // SetTransport selects the transport used by Start.
@@ -42,7 +42,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  func SetTransport(transport string) {
  	mu.Lock()
  	defer mu.Unlock()
-@@ -138,6 +152,34 @@ func SetVP8Options(fps, batchSize int) {
+@@ -136,6 +153,40 @@ func SetVP8Options(fps, batchSize int) {
  	defaults.vp8BatchSize = clampAtLeastOne(batchSize, 64)
  }
  
@@ -83,7 +83,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  // SetLivenessOptions configures control-stream ping/pong checks.
  // Values <= 0 reset that field to its default. Durations are milliseconds.
  func SetLivenessOptions(intervalMillis, timeoutMillis, failures int) {
-@@ -239,10 +281,7 @@ func Check(
+@@ -237,10 +288,7 @@ func Check(
  				DeviceID:  clientID,
  				LocalAddr: fmt.Sprintf("127.0.0.1:%d", socksPort),
  				DNSServer: defaultDNSServer,
@@ -95,7 +95,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  				Liveness: livenessConfig(cfg),
  			},
  			func() {
-@@ -329,10 +368,7 @@ func Ping(
+@@ -327,10 +375,7 @@ func Ping(
  				DeviceID:  clientID,
  				LocalAddr: fmt.Sprintf("127.0.0.1:%d", socksPort),
  				DNSServer: defaultDNSServer,
@@ -107,7 +107,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  				Liveness: livenessConfig(cfg),
  			},
  			func() {
-@@ -578,10 +614,7 @@ func startWithConfig(
+@@ -576,10 +621,7 @@ func startWithConfig(
  				DNSServer: cfg.dnsServer,
  				SOCKSUser: socksUser,
  				SOCKSPass: socksPass,
@@ -119,8 +119,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  				Liveness: livenessConfig(cfg),
  			},
  			func() {
-@@ -696,7 +729,21 @@ func ensureDefaultConfigLocked() {
- 		defaults = mobileConfig{
+@@ -694,7 +736,21 @@ func ensureDefaultConfigLocked() {
  			transport:        defaultTransport,
  			dnsServer:        defaultDNSServer,
  			vp8FPS:           60,
@@ -143,7 +142,7 @@ diff --git a/mobile/mobile.go b/mobile/mobile.go
  			livenessInterval: control.DefaultInterval,
  			livenessTimeout:  control.DefaultTimeout,
  			livenessFailures: control.DefaultFailures,
-@@ -724,11 +771,54 @@ func livenessConfig(cfg mobileConfig) control.Config {
+@@ -722,10 +778,56 @@ func livenessConfig(cfg mobileConfig) control.Config {
  	}
  }
  
