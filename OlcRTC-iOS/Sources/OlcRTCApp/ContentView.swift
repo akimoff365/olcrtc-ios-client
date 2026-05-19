@@ -17,12 +17,13 @@ struct ContentView: View {
     @State private var copiedLogs = false
     @State private var isRefreshing = false
     @State private var toastMessage: ToastMessage?
+    @State private var showAdvanced = false
     @FocusState private var importFocused: Bool
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 10) {
                     AppHeader()
 
                     ConnectionPanel(
@@ -136,19 +137,28 @@ struct ContentView: View {
                         }
                     )
 
-                    DiagnosticsPanel(
-                        logs: proxy.logs,
-                        copied: copiedLogs,
-                        copy: copyLogs
-                    )
-                    
-                    MetricsPanel(metrics: proxy.metrics, reset: {
-                        proxy.resetMetrics()
-                    })
-                    
-                    NotificationsPanel()
+                    DisclosureGroup(isExpanded: $showAdvanced) {
+                        VStack(spacing: 10) {
+                            DiagnosticsPanel(
+                                logs: proxy.logs,
+                                copied: copiedLogs,
+                                copy: copyLogs
+                            )
+
+                            MetricsPanel(metrics: proxy.metrics, reset: {
+                                proxy.resetMetrics()
+                            })
+
+                            NotificationsPanel()
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Label("Дополнительно", systemImage: "slider.horizontal.3")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 2)
                 }
-                .padding(16)
+                .padding(12)
             }
             .background(Color(.systemGroupedBackground))
             .refreshable {
@@ -332,87 +342,39 @@ private struct ConnectionPanel: View {
     let stop: () -> Void
     let canRestart: Bool
     let canStop: Bool
-    
-    @State private var pulseAnimation = false
 
     var body: some View {
         Panel(title: "Подключение", systemImage: status.symbolName) {
-            VStack(spacing: 16) {
+            VStack(spacing: 10) {
                 HStack(spacing: 10) {
                     StatusBadge(status: status)
                     Spacer()
                     NetworkBadge(name: networkName)
                 }
 
-                ZStack {
-                    // Пульсирующий эффект для активного соединения
-                    if status == .running {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [status.tint.opacity(0.3), status.tint.opacity(0)],
-                                    center: .center,
-                                    startRadius: 4,
-                                    endRadius: 72
-                                )
-                            )
-                            .frame(width: 132, height: 132)
-                            .scaleEffect(pulseAnimation ? 1.2 : 1.0)
-                            .opacity(pulseAnimation ? 0 : 1)
-                            .animation(.easeInOut(duration: 2).repeatForever(autoreverses: false), value: pulseAnimation)
-                    }
-                    
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [status.tint.opacity(0.18), status.tint.opacity(0.04)],
-                                center: .center,
-                                startRadius: 4,
-                                endRadius: 72
-                            )
-                        )
-                        .frame(width: 132, height: 132)
-                    
-                    Circle()
-                        .stroke(status.tint.opacity(0.28), lineWidth: 2)
-                        .frame(width: 94, height: 94)
-                    
+                HStack(spacing: 12) {
                     Image(systemName: status.symbolName)
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [status.tint, status.tint.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .symbolEffect(.bounce, value: status)
-                }
-                .frame(maxWidth: .infinity)
-                .onAppear {
-                    if status == .running {
-                        pulseAnimation = true
-                    }
-                }
-                .onChange(of: status) { _, newStatus in
-                    pulseAnimation = newStatus == .running
-                }
-
-                VStack(spacing: 5) {
-                    Text(status.rawValue)
-                        .font(.title2.weight(.bold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(status.tint)
-                    Text(activeProfile?.displayName ?? "Выбери профиль ниже")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                    if let activeProfile {
-                        Text("\(activeProfile.carrierDisplayName) / \(activeProfile.transportDisplayName)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.tertiary)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(status.rawValue)
+                            .font(.headline)
+                            .foregroundStyle(status.tint)
+                        Text(activeProfile?.displayName ?? "Выбери профиль ниже")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        if let activeProfile {
+                            Text("\(activeProfile.carrierDisplayName) / \(activeProfile.transportDisplayName)")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
+
+                    Spacer()
                 }
 
                 HStack(spacing: 10) {
@@ -422,16 +384,14 @@ private struct ConnectionPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(status.tint)
-                    .controlSize(.large)
                     .disabled(!canRestart)
                     .animation(.spring(response: 0.3), value: canRestart)
 
                     Button(role: .destructive, action: stop) {
                         Image(systemName: "stop.fill")
-                            .frame(width: 44, height: 32)
+                            .frame(width: 36)
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.large)
                     .disabled(!canStop)
                     .animation(.spring(response: 0.3), value: canStop)
                 }
@@ -451,12 +411,12 @@ private struct ConnectionPanel: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+                    .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(Color(.secondarySystemGroupedBackground))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10)
+                                RoundedRectangle(cornerRadius: 8)
                                     .stroke(Color.blue.opacity(0.2), lineWidth: 1)
                             )
                     )
@@ -470,52 +430,25 @@ private struct ConnectionPanel: View {
 
 private struct AppHeader: View {
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.accentColor.opacity(0.2), Color.accentColor.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: Color.accentColor.opacity(0.3), radius: 8, x: 0, y: 4)
-                
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            }
-            .frame(width: 52, height: 52)
-
+        HStack(spacing: 10) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 3) {
                 Text("OlcRTC Gateway")
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.primary, .primary.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                Text("RTC-туннель, локальный SOCKS и системный режим")
+                Text("SOCKS и системный VPN")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
             }
 
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
     }
 }
 
@@ -535,13 +468,13 @@ private struct ImportPanel: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused(importFocused)
-                    .lineLimit(4...8)
-                    .padding(12)
+                    .lineLimit(2...5)
+                    .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(Color(.secondarySystemGroupedBackground))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10)
+                                RoundedRectangle(cornerRadius: 8)
                                     .stroke(importFocused.wrappedValue ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
                             )
                     )
@@ -692,31 +625,20 @@ private struct ProfileRow: View {
     let remove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(isActive ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
-                        .frame(width: 36, height: 36)
-
-                    Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(
-                            isActive ?
-                            LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .top, endPoint: .bottom) :
-                            LinearGradient(colors: [.secondary], startPoint: .top, endPoint: .bottom)
-                        )
-                        .symbolEffect(.bounce, value: isActive)
-                }
+                Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isActive ? .green : .secondary)
+                    .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.displayName)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     HStack(spacing: 6) {
                         MiniPill(text: profile.carrierDisplayName)
                         MiniPill(text: profile.transportDisplayName)
-                        MiniPill(text: profile.compatibilityLabel)
                     }
                     Text(profile.roomLabel)
                         .font(.caption.monospaced())
@@ -728,6 +650,7 @@ private struct ProfileRow: View {
 
                 Button(action: ping) {
                     Image(systemName: pingIcon)
+                        .frame(width: 24)
                 }
                 .buttonStyle(.bordered)
                 .disabled(isBusy || pingResult.state.isChecking)
@@ -735,12 +658,14 @@ private struct ProfileRow: View {
 
                 Button(action: connect) {
                     Image(systemName: "power")
+                        .frame(width: 24)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isBusy || pingResult.state.isChecking)
 
                 Button(role: .destructive, action: remove) {
                     Image(systemName: "trash")
+                        .frame(width: 24)
                 }
                 .buttonStyle(.bordered)
             }
@@ -763,17 +688,15 @@ private struct ProfileRow: View {
                 )
             }
         }
-        .padding(12)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: isActive ? .green.opacity(0.2) : .clear, radius: 8, x: 0, y: 2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.green.opacity(0.35) : Color.clear, lineWidth: 1)
         )
-        .animation(.spring(response: 0.3), value: isActive)
     }
 
     private var pingIcon: String {
@@ -825,13 +748,13 @@ private struct MiniPill: View {
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 5)
                     .fill(Color(.tertiarySystemGroupedBackground))
                     .overlay(
-                        Capsule()
+                        RoundedRectangle(cornerRadius: 5)
                             .stroke(Color.secondary.opacity(0.1), lineWidth: 0.5)
                     )
             )
@@ -848,18 +771,15 @@ private struct ProxyPanel: View {
 
     var body: some View {
         Panel(title: "Локальный прокси", systemImage: "network") {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ProxyInfoRow(label: "Type", value: "SOCKS5", icon: "network")
-                    ProxyInfoRow(label: "Host", value: "127.0.0.1", icon: "server.rack")
-                    ProxyInfoRow(label: "Port", value: "\(port)", icon: "number")
-                    ProxyInfoRow(label: "Auth", value: "On", icon: "lock.fill")
-                    ProxyInfoRow(label: "User", value: credentials.username, icon: "person.fill")
-                    ProxyInfoRow(label: "Pass", value: credentials.password, icon: "key.fill")
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ProxyInfoRow(label: "Адрес", value: "127.0.0.1:\(port)", icon: "server.rack")
+                    ProxyInfoRow(label: "Логин", value: credentials.username, icon: "person.fill")
+                    ProxyInfoRow(label: "Пароль", value: credentials.password, icon: "key.fill")
                 }
-                .padding(12)
+                .padding(10)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Color(.secondarySystemGroupedBackground))
                 )
 
@@ -880,25 +800,11 @@ private struct ProxyPanel: View {
                 }
 
                 Button(action: copySettings) {
-                    Label(copied == .settings ? "Скопировано" : "Копировать вручную", systemImage: copied == .settings ? "checkmark" : "doc.on.doc")
+                    Label(copied == .settings ? "Скопировано" : "Настройки", systemImage: copied == .settings ? "checkmark" : "doc.on.doc")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .animation(.spring(response: 0.3), value: copied)
-
-                HStack(spacing: 8) {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundStyle(.orange)
-                    Text("Сначала запусти профиль здесь, затем включи SOCKS-профиль во внешнем клиенте. После смены сети выключи внешний туннель, перезапусти SOCKS и включи туннель снова.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.orange.opacity(0.1))
-                )
             }
         }
     }
@@ -917,13 +823,15 @@ private struct ProxyInfoRow: View {
                 .frame(width: 20)
             
             Text(label)
-                .font(.callout)
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
             
             Text(value)
-                .font(.callout.monospaced().weight(.medium))
+                .font(.caption.monospaced().weight(.medium))
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             
             Spacer()
         }
@@ -1003,19 +911,6 @@ private struct VPNPanel: View {
                     .buttonStyle(.bordered)
                 }
 
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(.green)
-                    Text("Локальный SOCKS для Happ остаётся отдельным режимом выше. Здесь iOS запускает olcRTC внутри extension; режим «Весь» и «Раздельно» используют tun2socks packet engine.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.green.opacity(0.09))
-                )
             }
         }
     }
@@ -1083,7 +978,7 @@ private struct DiagnosticsPanel: View {
                     .padding(.vertical, 32)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(logs.prefix(12))) { entry in
+                        ForEach(Array(logs.prefix(6))) { entry in
                             LogRow(entry: entry)
                         }
                     }
@@ -1141,21 +1036,15 @@ private struct Panel<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.primary, .primary.opacity(0.7)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .foregroundStyle(.primary)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 3)
         )
     }
 }
@@ -1329,58 +1218,29 @@ private struct ReadinessPanel: View {
     
     var body: some View {
         Panel(title: "Готовность", systemImage: "checkmark.shield.fill") {
-            VStack(spacing: 14) {
-                // Main indicator
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(stateColor.opacity(0.15))
-                            .frame(width: 60, height: 60)
-                        
-                        Image(systemName: state.icon)
-                            .font(.title2)
-                            .foregroundStyle(stateColor)
-                            .symbolEffect(.pulse, options: .repeating, value: state == .checking)
-                    }
-                    
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: state.icon)
+                        .font(.headline)
+                        .foregroundStyle(stateColor)
+                        .frame(width: 24)
+                        .symbolEffect(.pulse, options: .repeating, value: state == .checking)
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text(state.rawValue)
-                            .font(.title3.weight(.bold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(stateColor)
-                        
+
                         Text(state.message)
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    
+
                     Spacer()
                 }
-                
-                // Quick checks summary
-                if !checks.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(checks) { check in
-                            VStack(spacing: 4) {
-                                Image(systemName: check.icon)
-                                    .font(.caption)
-                                    .foregroundStyle(check.passed ? Color.green : Color.red)
-                                Text(check.name.split(separator: " ").first ?? "")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(.secondarySystemGroupedBackground))
-                    )
-                }
-                
-                // Actions
+
                 HStack(spacing: 10) {
                     Button(action: refresh) {
                         Label("Проверить", systemImage: "arrow.clockwise")
@@ -1392,7 +1252,8 @@ private struct ReadinessPanel: View {
                     
                     if !checks.isEmpty {
                         Button(action: { showingDetails = true }) {
-                            Label("Детали", systemImage: "info.circle")
+                            Image(systemName: "info.circle")
+                                .frame(width: 36)
                         }
                         .buttonStyle(.bordered)
                     }
