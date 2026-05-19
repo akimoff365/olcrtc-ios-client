@@ -534,8 +534,6 @@ final class LocalProxyController: ObservableObject {
             }
 
             isOperationInProgress = true
-            defer { isOperationInProgress = false }
-
             status = .restarting
             healthState = .checking
             lastMessage = "Восстановление после смены сети: попытка \(index + 1)/\(delays.count)..."
@@ -577,12 +575,14 @@ final class LocalProxyController: ObservableObject {
 
                 readinessState = .ready
                 readinessChecks = []
+                isOperationInProgress = false
                 return
             } catch {
                 stopEngineInBackground()
                 BackgroundKeepAlive.shared.stop()
                 healthState = .unhealthy
                 appendLog(.warning, "Network recovery attempt \(index + 1)/\(delays.count) failed: \(error.localizedDescription)")
+                isOperationInProgress = false
             }
         }
 

@@ -48,12 +48,19 @@ final class VPNController: ObservableObject {
     @Published var tunnelMode: TunnelMode {
         didSet {
             UserDefaults.standard.set(tunnelMode.rawValue, forKey: Self.tunnelModeKey)
+            guard oldValue != tunnelMode else {
+                return
+            }
+            if status == .installed || status == .connected || status == .disconnected {
+                lastMessage = "Режим изменен на «\(tunnelMode.title)». Переустанови VPN профиль, чтобы применить его."
+            }
         }
     }
 
     private let tunnelBundleIdentifier = "ru.pasklove.olcrtc.tunnel"
     private let managerDescription = "OlcRTC Gateway"
     private static let tunnelModeKey = "olcrtc.vpn.tunnelMode"
+    private var statusRefreshTask: Task<Void, Never>?
 
     init() {
         let savedMode = UserDefaults.standard.string(forKey: Self.tunnelModeKey)
@@ -121,6 +128,7 @@ final class VPNController: ObservableObject {
             }
             try manager.connection.startVPNTunnel()
             updateStatus(from: manager)
+            scheduleStatusRefresh()
         } catch {
             status = .failed
             lastMessage = error.localizedDescription
@@ -135,6 +143,7 @@ final class VPNController: ObservableObject {
             }
             manager.connection.stopVPNTunnel()
             updateStatus(from: manager)
+            scheduleStatusRefresh()
         } catch {
             status = .failed
             lastMessage = error.localizedDescription
@@ -160,6 +169,26 @@ final class VPNController: ObservableObject {
             status = .installed
         @unknown default:
             status = .installed
+        }
+    }
+
+    private func scheduleStatusRefresh() {
+        statusRefreshTask?.cancel()
+        statusRefreshTask = Task { [weak self] in
+            let delays: [UInt64] = [
+                700_000_000,
+                1_500_000_000,
+                3_000_000_000,
+                5_000_000_000
+            ]
+
+            for delay in delays {
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled else {
+                    return
+                }
+                await self?.refresh()
+            }
         }
     }
 }

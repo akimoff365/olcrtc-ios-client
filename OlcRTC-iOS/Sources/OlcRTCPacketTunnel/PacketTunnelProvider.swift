@@ -260,10 +260,8 @@ private final class Tun2SocksPacketEngine {
 
     func start() throws {
         #if canImport(Tun2SocksKit)
-        DispatchQueue.global(qos: .userInitiated).async { [config] in
-            Socks5Tunnel.run(withConfig: .string(content: config)) { code in
-                NSLog("Tun2SocksKit exited with code \(code)")
-            }
+        Socks5Tunnel.run(withConfig: .string(content: config)) { code in
+            NSLog("Tun2SocksKit exited with code \(code)")
         }
         #else
         throw TunnelError.tun2socksUnavailable
@@ -271,7 +269,9 @@ private final class Tun2SocksPacketEngine {
     }
 
     func stop() {
-        // Tun2SocksKit stops with the packet tunnel extension lifecycle.
+        #if canImport(Tun2SocksKit)
+        Socks5Tunnel.quit()
+        #endif
     }
 
     private static func makeConfig(socksPort: Int, socksUser: String, socksPass: String) -> String {
