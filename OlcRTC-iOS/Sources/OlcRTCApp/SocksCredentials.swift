@@ -66,6 +66,8 @@ struct SocksCredentials: Codable, Equatable, Sendable {
 
 private extension String {
     var urlComponentEncoded: String {
-        addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? self
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return addingPercentEncoding(withAllowedCharacters: allowed) ?? self
     }
 }
