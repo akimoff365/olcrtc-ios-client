@@ -34,6 +34,8 @@
 - URI payload для `vp8channel`, `seichannel`, `videochannel`.
 - Системный `PacketTunnelProvider` без Happ.
 - Packet mode через `Tun2SocksKit`: весь трафик или local/private CIDR мимо VPN.
+- Пресеты маршрутизации для будущего rule engine: `Simple-RU`, `Только блокировки`,
+  `Весь трафик`, `Локальные мимо`.
 - Unsigned IPA сборка через GitHub Actions для подписи через ESign.
 
 ## Режимы
@@ -50,6 +52,8 @@
 Это не полноценная маршрутизация по `geosite`/`geoip`. Для правил вида
 `geosite:youtube -> proxy`, `geoip:ru -> direct`, `category-ru -> direct`
 нужен embedded router уровня Xray/sing-box или отдельный routing слой перед SOCKS.
+В коде уже есть модель пресетов и генератор sing-box JSON, который подключается
+к outbound `socks -> 127.0.0.1:<olcrtc_port>`.
 
 ## Быстрый старт
 

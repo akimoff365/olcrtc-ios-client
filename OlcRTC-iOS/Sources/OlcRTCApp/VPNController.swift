@@ -47,6 +47,17 @@ final class VPNController: ObservableObject {
 
     @Published private(set) var status: Status = .idle
     @Published private(set) var lastMessage: String?
+    @Published var routingPreset: RoutingPreset {
+        didSet {
+            UserDefaults.standard.set(routingPreset.rawValue, forKey: Self.routingPresetKey)
+            guard oldValue != routingPreset else {
+                return
+            }
+            if status == .installed || status == .connected || status == .disconnected {
+                lastMessage = "Маршрутизация изменена на «\(routingPreset.title)». Перезапусти VPN, чтобы применить."
+            }
+        }
+    }
     @Published var tunnelMode: TunnelMode {
         didSet {
             UserDefaults.standard.set(tunnelMode.rawValue, forKey: Self.tunnelModeKey)
@@ -62,11 +73,14 @@ final class VPNController: ObservableObject {
     private let tunnelBundleIdentifier = "ru.pasklove.olcrtc.tunnel"
     private let managerDescription = "OlcRTC Gateway"
     private static let tunnelModeKey = "olcrtc.vpn.tunnelMode"
+    private static let routingPresetKey = "olcrtc.vpn.routingPreset"
     private var statusRefreshTask: Task<Void, Never>?
 
     init() {
         let savedMode = UserDefaults.standard.string(forKey: Self.tunnelModeKey)
         tunnelMode = TunnelMode(rawValue: savedMode ?? "") ?? .fullTunnel
+        let savedRoutingPreset = UserDefaults.standard.string(forKey: Self.routingPresetKey)
+        routingPreset = RoutingPreset(rawValue: savedRoutingPreset ?? "") ?? .simpleRU
         Task {
             await refresh()
         }
@@ -102,6 +116,7 @@ final class VPNController: ObservableObject {
                 "clientID": profile.runtimeClientID(),
                 "payload": profile.payload,
                 "tunnelMode": tunnelMode.rawValue,
+                "routingPreset": routingPreset.rawValue,
                 "socksPort": socksPort,
                 "socksUser": credentials.username,
                 "socksPass": credentials.password
@@ -113,7 +128,7 @@ final class VPNController: ObservableObject {
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
             status = .installed
-            lastMessage = "VPN профиль установлен: \(tunnelMode.subtitle)."
+            lastMessage = "VPN профиль установлен: \(tunnelMode.subtitle), \(routingPreset.title)."
         } catch {
             status = .failed
             lastMessage = error.localizedDescription

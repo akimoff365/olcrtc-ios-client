@@ -125,8 +125,12 @@ struct ContentView: View {
                         status: vpn.status,
                         message: vpn.lastMessage,
                         tunnelMode: vpn.tunnelMode,
+                        routingPreset: vpn.routingPreset,
                         setTunnelMode: { mode in
                             vpn.tunnelMode = mode
+                        },
+                        setRoutingPreset: { preset in
+                            vpn.routingPreset = preset
                         }
                     )
 
@@ -954,7 +958,9 @@ private struct SystemModePanel: View {
     let status: VPNController.Status
     let message: String?
     let tunnelMode: VPNController.TunnelMode
+    let routingPreset: RoutingPreset
     let setTunnelMode: (VPNController.TunnelMode) -> Void
+    let setRoutingPreset: (RoutingPreset) -> Void
 
     var body: some View {
         Panel(title: "Режим", systemImage: "switch.2") {
@@ -983,6 +989,21 @@ private struct SystemModePanel: View {
                             }
                         }
                         .pickerStyle(.segmented)
+
+                        Picker("Маршрутизация", selection: Binding(
+                            get: { routingPreset },
+                            set: { setRoutingPreset($0) }
+                        )) {
+                            ForEach(RoutingPreset.allCases) { preset in
+                                Text(preset.title).tag(preset)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Text(routingPreset.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         HStack(spacing: 8) {
                             Image(systemName: statusIcon)

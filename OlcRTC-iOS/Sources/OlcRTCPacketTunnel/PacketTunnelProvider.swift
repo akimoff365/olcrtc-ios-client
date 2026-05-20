@@ -20,6 +20,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    private enum RoutingPreset: String {
+        case allProxy
+        case simpleRU
+        case blockedOnly
+        case localOnly
+
+        var shouldBypassLocalRoutes: Bool {
+            self != .allProxy
+        }
+    }
+
     private var socksPort = 18080
     private var tunnelStarted = false
     private var packetEngine: Tun2SocksPacketEngine?
@@ -44,6 +55,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let socksPass = providerConfiguration["socksPass"] as? String ?? ""
         let payload = providerConfiguration["payload"] as? [String: String] ?? [:]
         let tunnelMode = TunnelMode(rawValue: providerConfiguration["tunnelMode"] as? String ?? "") ?? .systemProxy
+        let routingPreset = RoutingPreset(rawValue: providerConfiguration["routingPreset"] as? String ?? "") ?? .simpleRU
 
         #if canImport(Mobile)
         MobileSetProviders()
@@ -91,7 +103,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let settings = networkSettings(mode: tunnelMode, port: socksPort)
+        let settings = networkSettings(mode: tunnelMode, routingPreset: routingPreset, port: socksPort)
         setTunnelNetworkSettings(settings) { [weak self] error in
             guard let self else {
                 MobileStop()
@@ -145,14 +157,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler()
     }
 
-    private func networkSettings(mode: TunnelMode, port: Int) -> NEPacketTunnelNetworkSettings {
+    private func networkSettings(mode: TunnelMode, routingPreset: RoutingPreset, port: Int) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.88.0.1")
         settings.mtu = 1280
 
         let ipv4 = NEIPv4Settings(addresses: ["10.88.0.2"], subnetMasks: ["255.255.255.0"])
         if mode.usesPacketEngine {
             ipv4.includedRoutes = [NEIPv4Route.default()]
-            if mode == .splitTunnel {
+            if mode == .splitTunnel || routingPreset.shouldBypassLocalRoutes {
                 ipv4.excludedRoutes = Self.privateAndLocalRoutes()
             }
         }
