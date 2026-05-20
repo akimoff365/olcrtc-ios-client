@@ -3,8 +3,9 @@
 [![OlcRTC iOS](https://github.com/artpm4250-png/olcrtc-ios-client/actions/workflows/olcrtc-ios.yml/badge.svg)](https://github.com/artpm4250-png/olcrtc-ios-client/actions/workflows/olcrtc-ios.yml)
 
 Нативный iOS-клиент для `olcrtc`: локальный SOCKS5 для Happ и других клиентов,
-системный `NetworkExtension` профиль, packet tunnel через tun2socks и аккуратный
-split-routing для локальных сетей.
+системный `NetworkExtension` профиль и packet tunnel через tun2socks. Текущий
+`Локальные` режим исключает только private/local CIDR; rule-based routing уровня
+`geosite`/`geoip` требует отдельного routing engine.
 
 > Проект ориентирован на сборку unsigned IPA через GitHub Actions и последующую
 > подпись пользователем через ESign, AltStore, SideStore или другой личный способ.
@@ -17,7 +18,7 @@ split-routing для локальных сетей.
 | Импорт подписок | `olcrtc://`, plain text, `sub.md`, HTTP/HTTPS URL |
 | System VPN | Есть `NetworkExtension PacketTunnelProvider` |
 | Полный туннель | Через `Tun2SocksKit` в локальный SOCKS |
-| Раздельный туннель | Private/local CIDR исключены из туннеля |
+| Локальные сети мимо VPN | Private/local CIDR исключены из туннеля |
 | Upstream olcRTC | Сборка подтягивает `refactor/universal-carrier` |
 | IPA | Собирается workflow `OlcRTC iOS` |
 
@@ -32,7 +33,7 @@ split-routing для локальных сетей.
 - Поддержка `jitsi`, `telemost`, `wbstream`, `jazz` из `olcrtc@refactor/universal-carrier`.
 - URI payload для `vp8channel`, `seichannel`, `videochannel`.
 - Системный `PacketTunnelProvider` без Happ.
-- Packet mode через `Tun2SocksKit`: весь трафик или split-routing.
+- Packet mode через `Tun2SocksKit`: весь трафик или local/private CIDR мимо VPN.
 - Unsigned IPA сборка через GitHub Actions для подписи через ESign.
 
 ## Режимы
@@ -40,12 +41,15 @@ split-routing для локальных сетей.
 | Режим | Для чего | Как работает |
 | --- | --- | --- |
 | Локальный SOCKS | Happ / внешний клиент | Приложение держит `127.0.0.1:<port>` и отдаёт SOCKS5 credentials |
-| Прокси | Быстрый системный режим | iOS PAC отправляет HTTP/HTTPS через локальный SOCKS |
 | Весь | Полный системный туннель | Default route через `Tun2SocksKit` в локальный SOCKS `olcrtc` |
-| Раздельно | VPN без локальных сетей | Default route через tun2socks, private/local CIDR идут напрямую |
+| Локальные | VPN без локальных сетей | Default route через tun2socks, private/local CIDR идут напрямую |
 
-В split-routing исключены `10/8`, `100.64/10`, `127/8`, `169.254/16`,
+В режиме `Локальные` исключены `10/8`, `100.64/10`, `127/8`, `169.254/16`,
 `172.16/12`, `192.168/16` и multicast.
+
+Это не полноценная маршрутизация по `geosite`/`geoip`. Для правил вида
+`geosite:youtube -> proxy`, `geoip:ru -> direct`, `category-ru -> direct`
+нужен embedded router уровня Xray/sing-box или отдельный routing слой перед SOCKS.
 
 ## Быстрый старт
 
@@ -53,8 +57,7 @@ split-routing для локальных сетей.
 2. Подпиши `OlcRTCClient-unsigned.ipa` через ESign.
 3. Импортируй `olcrtc://` ссылку или подписку.
 4. Для Happ запусти локальный SOCKS и скопируй `socks://` / `socks5://`.
-5. Для режима без Happ установи системный VPN профиль и выбери `Прокси`, `Весь`
-   или `Раздельно`.
+5. Для режима без Happ включи `Системный VPN` и выбери `Весь` или `Локальные`.
 
 ## Для тестировщиков
 
@@ -62,7 +65,7 @@ split-routing для локальных сетей.
 
 - версию iOS и модель устройства;
 - carrier/provider и тип сети: Wi-Fi, LTE, 5G;
-- режим приложения: локальный SOCKS, Прокси, Весь или Раздельно;
+- режим приложения: локальный SOCKS, Весь или Локальные;
 - транспорт `olcrtc`: `datachannel`, `vp8channel`, `seichannel`, `videochannel`;
 - последние 30-50 строк лога из приложения без приватных ключей.
 

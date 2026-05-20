@@ -12,7 +12,7 @@
 - XcodeGen-конфиг, чтобы быстро собрать проект на macOS.
 - GitHub Actions workflow для сборки на macOS runner.
 - `NetworkExtension` target `OlcRTCPacketTunnel` для системного VPN-профиля.
-- `Tun2SocksKit` для packet tunnel режима `Весь` и `Раздельно`.
+- `Tun2SocksKit` для packet tunnel режима `Весь` и `Локальные`.
 
 ## Важное ограничение
 
@@ -31,13 +31,17 @@
 В приложении теперь есть два режима:
 
 - `Локальный прокси` - старый совместимый SOCKS5 режим для внешних клиентов.
-- `Системный VPN` - iOS `PacketTunnelProvider`, который запускает olcRTC внутри VPN extension, дожидается готовности SOCKS и работает как PAC/SOCKS, full packet tunnel или split tunnel.
+- `Системный VPN` - iOS `PacketTunnelProvider`, который запускает olcRTC внутри VPN extension, дожидается готовности SOCKS и работает как full packet tunnel или туннель с исключением локальных сетей.
 
 Режимы:
 
-- `Прокси` - системный PAC `SOCKS5 127.0.0.1:<port>` для HTTP/HTTPS-трафика.
 - `Весь` - default route через `Tun2SocksKit`, дальше в локальный SOCKS `olcrtc`.
-- `Раздельно` - default route через `Tun2SocksKit`, но private/local сети исключены из туннеля.
+- `Локальные` - default route через `Tun2SocksKit`, но private/local сети исключены из туннеля.
+
+Важно: `Локальные` - это базовый split только по CIDR локальных сетей. Правила
+вида `geosite:*`, `geoip:*`, `direct/proxy/block` текущий `Tun2SocksKit` слой не
+исполняет сам по себе. Для такого роутинга нужен embedded routing engine уровня
+Xray/sing-box или отдельный маршрутизатор перед SOCKS.
 
 Еще один iOS-нюанс: без `NetworkExtension` система может приостановить процесс в фоне, и тогда внешний клиент потеряет локальный SOCKS. В приложении включен silent audio keep-alive через `UIBackgroundModes: audio`, чтобы процесс продолжал жить после переключения во внешний VPN-клиент.
 
