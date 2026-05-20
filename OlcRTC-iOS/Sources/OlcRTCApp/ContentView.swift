@@ -9,6 +9,7 @@ struct ContentView: View {
     @EnvironmentObject private var store: ProfileStore
     @EnvironmentObject private var proxy: LocalProxyController
     @StateObject private var vpn = VPNController()
+    @AppStorage("olcrtc.useSystemVPN") private var useSystemVPN = false
     @State private var importText = ""
     @State private var importError: String?
     @State private var importMessage: String?
@@ -34,16 +35,15 @@ struct ContentView: View {
                         healthState: proxy.healthState,
                         reconnectCount: proxy.reconnectCount,
                         lastMessage: proxy.lastMessage,
-                        restart: {
+                        systemVPNEnabled: useSystemVPN,
+                        vpnStatus: vpn.status,
+                        primary: {
                             hapticFeedback(.medium)
-                            proxy.restartSocks()
+                            Task {
+                                await toggleConnection()
+                            }
                         },
-                        stop: {
-                            hapticFeedback(.heavy)
-                            proxy.stop()
-                        },
-                        canRestart: proxy.canRestart,
-                        canStop: proxy.status != .stopped
+                        canPrimary: canToggleConnection
                     )
                     
                     if proxy.status == .running {
@@ -95,7 +95,7 @@ struct ContentView: View {
                         connect: { profile in
                             hapticFeedback(.medium)
                             Task {
-                                await proxy.start(profile: profile)
+                                await startConnection(profile: profile)
                             }
                         },
                         ping: { profile in
@@ -120,40 +120,13 @@ struct ContentView: View {
                         copySettings: copyProxySettings
                     )
 
-                    VPNPanel(
+                    SystemModePanel(
+                        enabled: $useSystemVPN,
                         status: vpn.status,
                         message: vpn.lastMessage,
                         tunnelMode: vpn.tunnelMode,
-                        canInstall: proxy.activeProfile != nil || !store.profiles.isEmpty,
-                        canStart: proxy.activeProfile != nil || !store.profiles.isEmpty,
                         setTunnelMode: { mode in
                             vpn.tunnelMode = mode
-                        },
-                        install: {
-                            guard let profile = proxy.activeProfile ?? store.profiles.first else {
-                                showToast("Сначала импортируй olcRTC профиль", type: .info)
-                                return
-                            }
-                            hapticFeedback(.medium)
-                            Task {
-                                await vpn.install(
-                                    profile: profile,
-                                    socksPort: proxy.socksPort,
-                                    credentials: proxy.credentials
-                                )
-                            }
-                        },
-                        start: {
-                            hapticFeedback(.medium)
-                            Task {
-                                await vpn.start()
-                            }
-                        },
-                        stop: {
-                            hapticFeedback(.heavy)
-                            Task {
-                                await vpn.stop()
-                            }
                         }
                     )
 
@@ -185,6 +158,19 @@ struct ContentView: View {
                     proxy.appDidBecomeActive()
                 }
             }
+            .onChange(of: useSystemVPN) { _, enabled in
+                if enabled {
+                    if vpn.tunnelMode == .systemProxy {
+                        vpn.tunnelMode = .fullTunnel
+                    }
+                    return
+                }
+                Task {
+                    if vpn.status == .connected || vpn.status == .connecting {
+                        await vpn.stop()
+                    }
+                }
+            }
             .overlay(alignment: .top) {
                 if let toast = toastMessage {
                     ToastView(message: toast.text, type: toast.type)
@@ -201,7 +187,74 @@ struct ContentView: View {
         hapticFeedback(.light)
         try? await Task.sleep(for: .seconds(0.5))
         proxy.appDidBecomeActive()
+        await vpn.refresh()
         isRefreshing = false
+    }
+
+    private var canToggleConnection: Bool {
+        if proxy.isOperationInProgress {
+            return false
+        }
+
+        if vpn.status == .connected || vpn.status == .connecting {
+            return true
+        }
+
+        switch proxy.status {
+        case .running, .starting, .restarting, .needsTunnelRestart:
+            return true
+        case .stopped, .failed:
+            return proxy.activeProfile != nil || !store.profiles.isEmpty
+        }
+    }
+
+    private func toggleConnection() async {
+        if vpn.status == .connected || vpn.status == .connecting {
+            await stopConnection()
+            return
+        }
+
+        switch proxy.status {
+        case .running, .starting, .restarting, .needsTunnelRestart:
+            await stopConnection()
+        case .stopped, .failed:
+            guard let profile = proxy.activeProfile ?? store.profiles.first else {
+                showToast("Сначала импортируй профиль", type: .info)
+                return
+            }
+            await startConnection(profile: profile)
+        }
+    }
+
+    private func startConnection(profile: OlcRTCProfile) async {
+        if useSystemVPN {
+            if vpn.tunnelMode == .systemProxy {
+                vpn.tunnelMode = .fullTunnel
+            }
+            if vpn.status == .connected || vpn.status == .connecting {
+                await vpn.stop()
+            }
+            if proxy.status != .stopped {
+                proxy.stop()
+            }
+            await vpn.install(profile: profile, socksPort: proxy.socksPort, credentials: proxy.credentials)
+            await vpn.start()
+            return
+        }
+
+        if vpn.status == .connected || vpn.status == .connecting {
+            await vpn.stop()
+        }
+        await proxy.start(profile: profile)
+    }
+
+    private func stopConnection() async {
+        if vpn.status == .connected || vpn.status == .connecting {
+            await vpn.stop()
+        }
+        if proxy.status != .stopped {
+            proxy.stop()
+        }
     }
     
     private func showToast(_ text: String, type: ToastType) {
@@ -332,30 +385,38 @@ private struct ConnectionPanel: View {
     let healthState: LocalProxyController.HealthState
     let reconnectCount: Int
     let lastMessage: String?
-    let restart: () -> Void
-    let stop: () -> Void
-    let canRestart: Bool
-    let canStop: Bool
+    let systemVPNEnabled: Bool
+    let vpnStatus: VPNController.Status
+    let primary: () -> Void
+    let canPrimary: Bool
 
     var body: some View {
-        Panel(title: "Подключение", systemImage: status.symbolName) {
+        Panel(title: "Подключение", systemImage: displayIcon) {
             VStack(spacing: 10) {
                 HStack(spacing: 10) {
-                    StatusBadge(status: status)
+                    Text(systemVPNEnabled ? "VPN" : "SOCKS")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(displayTint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(displayTint.opacity(0.12))
+                        )
                     Spacer()
                     NetworkBadge(name: networkName)
                 }
 
                 HStack(spacing: 12) {
-                    Image(systemName: status.symbolName)
+                    Image(systemName: displayIcon)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(status.tint)
+                        .foregroundStyle(displayTint)
                         .frame(width: 28)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(status.rawValue)
+                        Text(displayStatus)
                             .font(.headline)
-                            .foregroundStyle(status.tint)
+                            .foregroundStyle(displayTint)
                         Text(activeProfile?.displayName ?? "Выбери профиль ниже")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -371,29 +432,19 @@ private struct ConnectionPanel: View {
                     Spacer()
                 }
 
-                HStack(spacing: 10) {
-                    Button(action: restart) {
-                        Label("Перезапустить", systemImage: "arrow.clockwise")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(status.tint)
-                    .disabled(!canRestart)
-                    .animation(.spring(response: 0.3), value: canRestart)
-
-                    Button(role: .destructive, action: stop) {
-                        Image(systemName: "stop.fill")
-                            .frame(width: 36)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canStop)
-                    .animation(.spring(response: 0.3), value: canStop)
+                Button(action: primary) {
+                    Label(primaryTitle, systemImage: primaryIcon)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(primaryTint)
+                .disabled(!canPrimary)
+                .animation(.spring(response: 0.3), value: canPrimary)
 
                 HStack(spacing: 10) {
-                    MetricView(title: "Маршрут", value: healthState.rawValue)
+                    MetricView(title: "Маршрут", value: systemVPNEnabled ? vpnStatus.rawValue : healthState.rawValue)
                     MetricView(title: "Рестарты", value: "\(reconnectCount)")
-                    MetricView(title: "Auth", value: "On")
+                    MetricView(title: "Режим", value: systemVPNEnabled ? "VPN" : "SOCKS")
                 }
 
                 if let lastMessage {
@@ -419,6 +470,72 @@ private struct ConnectionPanel: View {
                 }
             }
         }
+    }
+
+    private var isActive: Bool {
+        if systemVPNEnabled {
+            switch vpnStatus {
+            case .connected, .connecting, .loading:
+                return true
+            case .idle, .installed, .disconnected, .failed:
+                return false
+            }
+        }
+
+        switch status {
+        case .running, .starting, .restarting, .needsTunnelRestart:
+            return true
+        case .stopped, .failed:
+            return false
+        }
+    }
+
+    private var primaryTitle: String {
+        isActive ? "Выключить" : "Включить"
+    }
+
+    private var primaryIcon: String {
+        isActive ? "stop.fill" : "power"
+    }
+
+    private var primaryTint: Color {
+        isActive ? .red : displayTint
+    }
+
+    private var displayStatus: String {
+        systemVPNEnabled ? vpnStatus.rawValue : status.rawValue
+    }
+
+    private var displayIcon: String {
+        if systemVPNEnabled {
+            switch vpnStatus {
+            case .connected:
+                return "shield.checkered"
+            case .connecting, .loading:
+                return "hourglass"
+            case .failed:
+                return "xmark.octagon.fill"
+            default:
+                return "shield"
+            }
+        }
+        return status.symbolName
+    }
+
+    private var displayTint: Color {
+        if systemVPNEnabled {
+            switch vpnStatus {
+            case .connected:
+                return .green
+            case .connecting, .loading:
+                return .orange
+            case .failed:
+                return .red
+            default:
+                return .secondary
+            }
+        }
+        return status.tint
     }
 }
 
@@ -832,79 +949,57 @@ private struct ProxyInfoRow: View {
     }
 }
 
-private struct VPNPanel: View {
+private struct SystemModePanel: View {
+    @Binding var enabled: Bool
     let status: VPNController.Status
     let message: String?
     let tunnelMode: VPNController.TunnelMode
-    let canInstall: Bool
-    let canStart: Bool
     let setTunnelMode: (VPNController.TunnelMode) -> Void
-    let install: () -> Void
-    let start: () -> Void
-    let stop: () -> Void
 
     var body: some View {
-        Panel(title: "Системный VPN", systemImage: "shield.lefthalf.filled") {
-            VStack(alignment: .leading, spacing: 14) {
+        Panel(title: "Режим", systemImage: "switch.2") {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
-                    Image(systemName: statusIcon)
-                        .font(.title3)
-                        .foregroundStyle(statusColor)
-                        .frame(width: 28)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(status.rawValue)
-                            .font(.headline)
-                        if let message {
-                            Text(message)
-                                .font(.footnote)
+                    Toggle(isOn: $enabled) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Системный VPN")
+                                .font(.subheadline.weight(.semibold))
+                            Text(enabled ? "Кнопка включит системный туннель" : "Кнопка включит локальный SOCKS")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-
-                    Spacer()
+                    .tint(.green)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker("Режим", selection: Binding(
-                        get: { tunnelMode },
-                        set: { setTunnelMode($0) }
-                    )) {
-                        ForEach(VPNController.TunnelMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                if enabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Режим", selection: Binding(
+                            get: { tunnelMode },
+                            set: { setTunnelMode($0) }
+                        )) {
+                            ForEach(VPNController.TunnelMode.selectableModes) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        HStack(spacing: 8) {
+                            Image(systemName: statusIcon)
+                                .foregroundStyle(statusColor)
+                                .frame(width: 18)
+                            Text(status.rawValue)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(statusColor)
+                            if let message {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-
-                    Text(tunnelMode.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                HStack(spacing: 10) {
-                    Button(action: install) {
-                        Label("Установить", systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canInstall)
-
-                    Button(action: start) {
-                        Label("Включить", systemImage: "power")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canStart)
-
-                    Button(role: .destructive, action: stop) {
-                        Image(systemName: "stop.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                }
-
             }
         }
     }

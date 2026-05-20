@@ -8,6 +8,8 @@ final class VPNController: ObservableObject {
         case fullTunnel
         case splitTunnel
 
+        static let selectableModes: [TunnelMode] = [.fullTunnel, .splitTunnel]
+
         var id: String { rawValue }
 
         var title: String {
@@ -64,7 +66,7 @@ final class VPNController: ObservableObject {
 
     init() {
         let savedMode = UserDefaults.standard.string(forKey: Self.tunnelModeKey)
-        tunnelMode = TunnelMode(rawValue: savedMode ?? "") ?? .systemProxy
+        tunnelMode = TunnelMode(rawValue: savedMode ?? "") ?? .fullTunnel
         Task {
             await refresh()
         }
