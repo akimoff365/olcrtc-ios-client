@@ -47,6 +47,11 @@ jobs:
           chmod +x Scripts/build-mobile-xcframework.sh
           ./Scripts/build-mobile-xcframework.sh
 
+      - name: Download Libbox.xcframework
+        run: |
+          chmod +x Scripts/download-libbox-xcframework.sh
+          ./Scripts/download-libbox-xcframework.sh
+
       - name: Generate Xcode project
         run: xcodegen generate
 

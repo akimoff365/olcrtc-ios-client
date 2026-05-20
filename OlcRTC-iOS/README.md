@@ -51,9 +51,9 @@ Xray/sing-box или отдельный маршрутизатор перед SO
 - `Локальные мимо` - только private/local сети напрямую.
 
 Для этих пресетов есть генератор sing-box JSON: inbound `tun`, outbound `socks`
-на локальный `olcrtc`, `direct`, `block` и remote rule-set. Следующий шаг -
-подключить `Libbox.xcframework` в Packet Tunnel, чтобы эти правила исполнялись
-внутри системного VPN.
+на локальный `olcrtc`, `direct`, `block` и remote rule-set. `Libbox.xcframework`
+подключается только к Packet Tunnel extension; основной app bundle его не
+встраивает, чтобы не ломать установку приложения на симуляторе/iOS.
 
 Еще один iOS-нюанс: без `NetworkExtension` система может приостановить процесс в фоне, и тогда внешний клиент потеряет локальный SOCKS. В приложении включен silent audio keep-alive через `UIBackgroundModes: audio`, чтобы процесс продолжал жить после переключения во внешний VPN-клиент.
 

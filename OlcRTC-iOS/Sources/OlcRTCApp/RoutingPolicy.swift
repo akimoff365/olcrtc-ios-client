@@ -76,9 +76,22 @@ struct SingBoxRoutingConfigBuilder {
     let socksPort: Int
     let credentials: SocksCredentials
     let preset: RoutingPreset
+    let includeTunInbound: Bool
+
+    init(
+        socksPort: Int,
+        credentials: SocksCredentials,
+        preset: RoutingPreset,
+        includeTunInbound: Bool = true
+    ) {
+        self.socksPort = socksPort
+        self.credentials = credentials
+        self.preset = preset
+        self.includeTunInbound = includeTunInbound
+    }
 
     func makeConfig() throws -> String {
-        let config: [String: Any] = [
+        var config: [String: Any] = [
             "log": [
                 "level": "warn"
             ],
@@ -96,17 +109,6 @@ struct SingBoxRoutingConfigBuilder {
                     ]
                 ],
                 "strategy": "ipv4_only"
-            ],
-            "inbounds": [
-                [
-                    "type": "tun",
-                    "tag": "tun-in",
-                    "address": ["172.19.0.1/30"],
-                    "mtu": 1280,
-                    "auto_route": true,
-                    "strict_route": false,
-                    "stack": "system"
-                ]
             ],
             "outbounds": [
                 [
@@ -134,6 +136,29 @@ struct SingBoxRoutingConfigBuilder {
                 "auto_detect_interface": true
             ]
         ]
+
+        if includeTunInbound {
+            config["inbounds"] = [
+                [
+                    "type": "tun",
+                    "tag": "tun-in",
+                    "address": ["172.19.0.1/30"],
+                    "mtu": 1280,
+                    "auto_route": true,
+                    "strict_route": false,
+                    "stack": "system"
+                ]
+            ]
+        } else {
+            config["inbounds"] = [
+                [
+                    "type": "mixed",
+                    "tag": "validation-in",
+                    "listen": "127.0.0.1",
+                    "listen_port": 0
+                ]
+            ]
+        }
 
         let data = try JSONSerialization.data(
             withJSONObject: config,

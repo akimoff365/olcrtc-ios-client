@@ -60,6 +60,8 @@ targets:
     dependencies:
       - framework: Frameworks/Mobile.xcframework
         embed: true
+      - framework: Frameworks/Libbox.xcframework
+        embed: true
       - package: Tun2SocksKit
     settings:
       base:
