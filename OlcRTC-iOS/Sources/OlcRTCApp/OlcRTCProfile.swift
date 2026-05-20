@@ -186,16 +186,20 @@ extension OlcRTCProfile {
         }
 
         let body = String(value.dropFirst("olcrtc://".count))
-        let splitComment = body.splitOnce(separator: "$")
-        let leftOfComment = splitComment.left
-        let comment = splitComment.right ?? ""
-
-        let splitKey = leftOfComment.splitOnce(separator: "#")
+        let splitKey = body.splitOnce(separator: "#")
         guard let keyAndClient = splitKey.right else {
             throw ParseError.invalidKey
         }
 
-        let splitClient = keyAndClient.splitOnce(separator: "%")
+        let normalizedKeyAndClient = keyAndClient.hasPrefix("$")
+            ? String(keyAndClient.dropFirst())
+            : keyAndClient
+
+        let splitComment = normalizedKeyAndClient.splitOnce(separator: "$")
+        let keyAndOptionalClient = splitComment.left
+        let comment = splitComment.right ?? ""
+
+        let splitClient = keyAndOptionalClient.splitOnce(separator: "%")
         guard splitClient.left.isHexKey else {
             throw ParseError.invalidKey
         }
@@ -221,15 +225,16 @@ extension OlcRTCProfile {
             return decoded.isEmpty ? nil : decoded
         } ?? DeviceIdentity.profileClientID(
             carrier: carrier.percentDecoded,
-            roomID: roomID.percentDecoded,
+            roomID: Self.normalizedRoomID(roomID.percentDecoded, carrier: carrier.percentDecoded),
             keyHex: keyHex
         )
 
         let parsedTransport = Self.parseTransport(transportPart)
-        self.carrier = carrier.percentDecoded
+        let decodedCarrier = carrier.percentDecoded
+        self.carrier = decodedCarrier
         self.transport = parsedTransport.name
         self.payload = parsedTransport.payload
-        self.roomID = roomID.percentDecoded
+        self.roomID = Self.normalizedRoomID(roomID.percentDecoded, carrier: decodedCarrier)
         self.keyHex = keyHex
         self.clientID = clientID
         self.comment = comment.percentDecoded
@@ -254,6 +259,18 @@ extension OlcRTCProfile {
         }
 
         return (name.percentDecoded, payload)
+    }
+
+    private static func normalizedRoomID(_ value: String, carrier: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard carrier.lowercased() == "jitsi",
+              !trimmed.lowercased().hasPrefix("http://"),
+              !trimmed.lowercased().hasPrefix("https://"),
+              trimmed.contains("/"),
+              !trimmed.hasPrefix("/") else {
+            return trimmed
+        }
+        return "https://\(trimmed)"
     }
 
     enum ParseError: LocalizedError {

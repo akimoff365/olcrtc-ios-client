@@ -130,6 +130,28 @@ final class OlcRTCURIParserTests: XCTestCase {
         XCTAssertEqual(profile.roomLabel, "meet.jit.si")
     }
 
+    func testNormalizesJitsiHostSlashRoom() throws {
+        let key = "70523e50350dc853718227eee3b16d7d32f47d354a9678b41e97e91a81fc4269"
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://jitsi?datachannel@meet.bl3ndr.io/heisenberg#\(key)$Jitsi2"
+        )
+
+        XCTAssertEqual(profile.roomID, "https://meet.bl3ndr.io/heisenberg")
+        XCTAssertEqual(profile.roomLabel, "meet.bl3ndr.io")
+        XCTAssertEqual(profile.comment, "Jitsi2")
+    }
+
+    func testAcceptsAccidentalDollarBeforeKey() throws {
+        let key = "70523e50350dc853718227eee3b16d7d32f47d354a9678b41e97e91a81fc4269"
+        let profile = try OlcRTCProfile(
+            uri: "olcrtc://jitsi?datachannel@meet.bl3ndr.io/heisenberg#$\(key)$Jitsi2"
+        )
+
+        XCTAssertEqual(profile.keyHex, key)
+        XCTAssertEqual(profile.roomID, "https://meet.bl3ndr.io/heisenberg")
+        XCTAssertEqual(profile.comment, "Jitsi2")
+    }
+
     func testNonJitsiProfilesKeepFastStartupPolicy() throws {
         let profile = try OlcRTCProfile(
             uri: "olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%iphone-01$CH data"
