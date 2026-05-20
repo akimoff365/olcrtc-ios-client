@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var copiedLogs = false
     @State private var isRefreshing = false
     @State private var toastMessage: ToastMessage?
+    @State private var showImport = false
     @State private var showAdvanced = false
     @FocusState private var importFocused: Bool
 
@@ -57,15 +58,34 @@ struct ContentView: View {
                         )
                     }
 
-                    ImportPanel(
-                        importText: $importText,
-                        importError: importError,
-                        importMessage: importMessage,
-                        isImporting: isImporting,
-                        importFocused: $importFocused,
-                        paste: pasteProfile,
-                        submit: { importProfile(from: importText) }
-                    )
+                    if store.profiles.isEmpty {
+                        ImportPanel(
+                            importText: $importText,
+                            importError: importError,
+                            importMessage: importMessage,
+                            isImporting: isImporting,
+                            importFocused: $importFocused,
+                            paste: pasteProfile,
+                            submit: { importProfile(from: importText) }
+                        )
+                    } else {
+                        DisclosureGroup(isExpanded: $showImport) {
+                            ImportPanel(
+                                importText: $importText,
+                                importError: importError,
+                                importMessage: importMessage,
+                                isImporting: isImporting,
+                                importFocused: $importFocused,
+                                paste: pasteProfile,
+                                submit: { importProfile(from: importText) }
+                            )
+                            .padding(.top, 8)
+                        } label: {
+                            Label("Импорт", systemImage: "link.badge.plus")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(.horizontal, 2)
+                    }
 
                     ProfilesPanel(
                         profiles: store.profiles,
@@ -138,22 +158,14 @@ struct ContentView: View {
                     )
 
                     DisclosureGroup(isExpanded: $showAdvanced) {
-                        VStack(spacing: 10) {
-                            DiagnosticsPanel(
-                                logs: proxy.logs,
-                                copied: copiedLogs,
-                                copy: copyLogs
-                            )
-
-                            MetricsPanel(metrics: proxy.metrics, reset: {
-                                proxy.resetMetrics()
-                            })
-
-                            NotificationsPanel()
-                        }
+                        DiagnosticsPanel(
+                            logs: proxy.logs,
+                            copied: copiedLogs,
+                            copy: copyLogs
+                        )
                         .padding(.top, 8)
                     } label: {
-                        Label("Дополнительно", systemImage: "slider.horizontal.3")
+                        Label("Логи", systemImage: "list.bullet.rectangle")
                             .font(.subheadline.weight(.semibold))
                     }
                     .padding(.horizontal, 2)
@@ -165,25 +177,6 @@ struct ContentView: View {
                 await refreshStatus()
             }
             .navigationTitle("Gateway")
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        hapticFeedback(.medium)
-                        proxy.restartSocks()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(!proxy.canRestart)
-
-                    Button(role: .destructive) {
-                        hapticFeedback(.heavy)
-                        proxy.stop()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                    }
-                    .disabled(proxy.status == .stopped)
-                }
-            }
             .onOpenURL { url in
                 importProfile(from: url.absoluteString)
             }
@@ -260,6 +253,7 @@ struct ContentView: View {
                     importText = ""
                     importMessage = result.userMessage
                     isImporting = false
+                    showImport = false
                     hapticFeedback(.medium)
                     showToast("Профили импортированы", type: .success)
                 }
