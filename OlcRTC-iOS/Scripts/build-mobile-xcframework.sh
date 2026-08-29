@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_DIR="$ROOT_DIR/Vendor"
 FRAMEWORK_DIR="$ROOT_DIR/Frameworks"
 OLCRTC_DIR="$VENDOR_DIR/olcrtc"
-OLCRTC_REF="${OLCRTC_REF:-refactor/universal-carrier}"
+OLCRTC_REF="${OLCRTC_REF:-master}"
 
 mkdir -p "$VENDOR_DIR" "$FRAMEWORK_DIR"
 
@@ -17,6 +17,7 @@ else
   git -C "$OLCRTC_DIR" pull --ff-only origin "$OLCRTC_REF"
   git -C "$OLCRTC_DIR" reset --hard "origin/$OLCRTC_REF"
   git -C "$OLCRTC_DIR" submodule update --init --recursive
+  git -C "$OLCRTC_DIR" fetch --all --tags --prune
 fi
 
 pushd "$OLCRTC_DIR" >/dev/null
