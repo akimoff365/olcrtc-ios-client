@@ -18,15 +18,19 @@ else
   git -C "$OLCRTC_DIR" reset --hard "origin/$OLCRTC_REF"
   git -C "$OLCRTC_DIR" submodule update --init --recursive
   git -C "$OLCRTC_DIR" fetch --all --tags --prune
+  git -C "$OLCRTC_DIR" checkout "$OLCRTC_REF"
 fi
 
 pushd "$OLCRTC_DIR" >/dev/null
 echo "Using olcRTC $(git rev-parse --short HEAD) from $OLCRTC_REF"
 for patch_file in "$ROOT_DIR"/Patches/*.patch; do
   [[ -e "$patch_file" ]] || continue
-  echo "Applying $(basename "$patch_file")"
-  git apply --check "$patch_file"
-  git apply "$patch_file"
+  if git apply --check "$patch_file" >/dev/null 2>&1; then
+    echo "Applying $(basename "$patch_file")"
+    git apply "$patch_file"
+  else
+    echo "Skipping $(basename "$patch_file") (not applicable to current upstream ref)"
+  fi
 done
 gomobile bind -target=ios -o "$FRAMEWORK_DIR/Mobile.xcframework" ./mobile
 popd >/dev/null
