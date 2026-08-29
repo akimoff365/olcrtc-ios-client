@@ -32,6 +32,125 @@ for patch_file in "$ROOT_DIR"/Patches/*.patch; do
     echo "Skipping $(basename "$patch_file") (not applicable to current upstream ref)"
   fi
 done
+
+cat > "$OLCRTC_DIR/mobile/compat.go" <<'EOF'
+package mobile
+
+import "fmt"
+
+var compatRuntime = New()
+
+func MobileSetProviders() {}
+
+func MobileSetDNS(dnsServer string) {
+	_ = compatRuntime.SetDNS(dnsServer)
+}
+
+func MobileSetTransport(transport string) {
+	_ = compatRuntime.SetTransport(transport)
+}
+
+func MobileSetLivenessOptions(intervalMillis, timeoutMillis, failures int) {
+	_ = compatRuntime.SetLivenessOptions(intervalMillis, timeoutMillis, failures)
+}
+
+func MobileSetVP8Options(fps, batchSize int) {
+	_ = compatRuntime.SetVP8Options(fps, batchSize)
+}
+
+func MobileSetSEIOptions(fps, batchSize, fragmentSize, ackTimeoutMS int) {
+	_ = compatRuntime.SetSEIOptions(fps, batchSize, fragmentSize, ackTimeoutMS)
+}
+
+func MobileSetVideoOptions(
+	width, height, fps int,
+	bitrate, hw string,
+	qrSize int,
+	qrRecovery, codec string,
+	tileModule, tileRS int,
+) {
+	_ = compatRuntime.SetVideoOptions(width, height, fps, qrSize, qrRecovery, codec, tileModule, tileRS)
+}
+
+func MobileStartWithTransport(
+	carrier, transport, roomID, clientID, keyHex string,
+	socksPort int,
+	socksUser, socksPass string,
+	errPtr *error,
+) bool {
+	if errPtr != nil {
+		*errPtr = nil
+	}
+	provider := "none"
+	switch carrier {
+	case "jitsi", "telemost", "wbstream", "none":
+		provider = carrier
+	default:
+		provider = "jitsi"
+	}
+	if e := compatRuntime.SetProvider(provider); e != nil {
+		setCompatError(errPtr, e)
+		return false
+	}
+	if e := compatRuntime.SetTransport(transport); e != nil {
+		setCompatError(errPtr, e)
+		return false
+	}
+	if roomID != "" {
+		compatRuntime.SetRoom(roomID)
+	}
+	if clientID != "" {
+		compatRuntime.SetDeviceID(clientID)
+	}
+	if keyHex != "" {
+		if e := compatRuntime.SetKey(keyHex); e != nil {
+			setCompatError(errPtr, e)
+			return false
+		}
+	}
+	if socksPort > 0 {
+		if e := compatRuntime.SetSocksPort(socksPort); e != nil {
+			setCompatError(errPtr, e)
+			return false
+		}
+	}
+	if e := compatRuntime.SetSocksCredentials(socksUser, socksPass); e != nil {
+		setCompatError(errPtr, e)
+		return false
+	}
+	if e := compatRuntime.SetDNS("8.8.8.8:53"); e != nil {
+		setCompatError(errPtr, e)
+		return false
+	}
+	if e := compatRuntime.Start(); e != nil {
+		setCompatError(errPtr, e)
+		return false
+	}
+	return true
+}
+
+func MobileWaitReady(timeoutMillis int, errPtr *error) bool {
+	if errPtr != nil {
+		*errPtr = nil
+	}
+	if err := compatRuntime.WaitReady(timeoutMillis); err != nil {
+		setCompatError(errPtr, err)
+		return false
+	}
+	return true
+}
+
+func MobileStop() {
+	_ = compatRuntime.Stop(5000)
+}
+
+func setCompatError(errPtr *error, err error) {
+	if errPtr != nil {
+		*errPtr = fmt.Errorf("mobile compat: %w", err)
+	}
+}
+EOF
+
 gomobile bind -target=ios -o "$FRAMEWORK_DIR/Mobile.xcframework" ./mobile
 popd >/dev/null
 
