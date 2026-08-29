@@ -36,7 +36,12 @@ jobs:
           cache: false
 
       - name: Install tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: |
+          brew untap aws/tap || true
           brew install xcodegen
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
